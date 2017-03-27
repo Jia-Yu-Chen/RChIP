@@ -238,8 +238,8 @@ ggplot(data,aes(x=V1-401,y=V2/12906)) +
 
 ## *** tRNA R-loops
 1) Classification of tRNAs
-2) Differences between Rloop(+) and Rloop(-) tRNAs
-3) Correlation of Rloop signal intensity between sense- and antisense- Rloops
+2) Differences between R-loop(+) and R-loop(-) tRNAs
+3) Correlation of Rloop signal intensity between sense- and antisense- R-loops
 ```{r pie venn plot}
 # HEK293 R-ChIP
 Total=360+81+73+92;Lowlyexpressed=81;Nonexpressed=73;Nonalignable=92;Expressed=360

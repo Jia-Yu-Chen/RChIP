@@ -2,7 +2,7 @@
 
 ## Content
 profile.sh: generate signal profile (input: .bed6, strand-specific .bw, up/down-stream length)
-
+genomeBinReadsCoverage.sh: bin-wise reads coverage
 RChIP-Tech.Rmd: basic statistical analysis and visualization for R-ChIP technology paper (Ref 1). 
 
 ## References

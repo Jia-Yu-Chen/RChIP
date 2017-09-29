@@ -52,5 +52,5 @@ do
   if [ "$status" = "" ];then perl -e 'print join(" ",split("",0 x 200)),"\n"';else echo $status; fi
 done > downstream
 
-paste upstream central downstream | sed 's/\t/ /g' | sed 's/n\/a/0/g' > profile
+paste upstream central downstream | sed 's/\t/ /g' | sed 's/n\/a/0/g'
 rm upstream central downstream

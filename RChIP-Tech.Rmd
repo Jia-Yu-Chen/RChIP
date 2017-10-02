@@ -103,9 +103,9 @@ BinnedHeatmapPlot <- function(data,z1,x1,y1,bin=6,x2=0,y2=0,z2=0){
 }
 ```
 
-####################################################################################################
+##########################################################################################
 ## * Figure 1. Genome-wide R-loop Profiling by Strand-specific R-ChIP
-####################################################################################################
+##########################################################################################
 ## * Fig 1F
 The signal intensity profile of R-ChIP data as well as the negative control (WKKD) and input in HEK293T cells.
 ```{r D210N-WKKD-Input Profile,fig.width=2.46,fig.height=2.49,fig.align = "center",message=F,warning=F}
@@ -196,9 +196,9 @@ text(3,10,paste("R = ",round(cor(rep3[,4],dele[,4]),2),sep=""))
 rm(dele,rep1,rep2,rep3)
 ```
 ##
-####################################################################################################
+##########################################################################################
 ## Figure 2. Sequence Features and Genomic Distribution of R-ChIP Signals
-####################################################################################################
+##########################################################################################
 ## * Fig 2A
 Distribution of sizes of R-ChIP narrow and broad peakas by the MACS2 program.
 ```{r Size Cmp (boxplot),fig.width=2.46,fig.height=2.19,fig.align = "center",message=F,warning=F}
@@ -355,9 +355,9 @@ wilcox.test(data[data$V2=="Broad_Common",1],data[data$V2=="Broad_Specific",1])
 wilcox.test(data[data$V2=="Narrow_Common",1],data[data$V2=="Narrow_Specific",1])
 ```
 ##
-####################################################################################################
+##########################################################################################
 ## Fig 3. Systematic Comparison of R-loops Captured by the Catalytically Dead RNASEH1 versus S9.6
-####################################################################################################
+##########################################################################################
 ## * Fig 3A
 Peak Size (RChIP vs DRIP)
 ```{r Peak Size (vs DRIP),fig.width=2.46,fig.height=2.30,fig.align = "center",message=F,warning=F}
@@ -458,9 +458,9 @@ rm(signal)
 ```
 
 ##
-####################################################################################################
+##########################################################################################
 ## Fig 4. Other R-loop Hotspots in the Human Genome
-####################################################################################################
+##########################################################################################
 ## * Fig 4A, S5A & S5B
 R-loop associated tRNAs by R-ChIP in HepG2 and K562 cell lines, and by DRIP-seq
 ```{r pie venn plot,fig.width=6.34,fig.height=4.21,fig.align = "center",message=F,warning=F}
@@ -513,9 +513,9 @@ legend(0.6, 3*iniR, gsub("_"," ",names(colors)[-1]),
        col=as.character(colors[-1]), pch=19,bty='n', ncol=1)
 ```
 ##
-####################################################################################################
+##########################################################################################
 ## Fig 5. Elevated RNAPII pausing at TSS allows for increased R-loop formation
-####################################################################################################
+##########################################################################################
 ## Fig 5B & S6B
 Pol-II decay and R-loop decay by ChIP-PCR and R-ChIP PCR, respectively
 ```{r R-ChIP PCR}
@@ -803,9 +803,9 @@ smoothScatter(log2(post1[,4]),log2(post2[,4]),xlim=c(0,12),ylim=c(0,12),
 text(3,10,paste("R = ",round(cor(post1[,4],post2[,4]),2),sep=""))
 ```
 ##
-####################################################################################################
+##########################################################################################
 ## Fig 6. Correlation of R-loop Levels with G/C Content and RNAPII Pausing at TSSs
-####################################################################################################
+##########################################################################################
 ## Fig 6A
 R-loops were divided into three groups according to the signal intensity (green) and the sequence features associated with each group are shown.
 Four datasets were tested: HEK293 (3 replicates, MC paper), HEK293.TSS (3 replicates), DRBrelated, DRBrelated.TSS
@@ -855,10 +855,10 @@ BinnedErrorBarPlot(data,x1=20,y1=24,y2=9,xlab="R-loop Signal\n(DRB2h)",
                    ylab="Decreased GRO-seq\nSignal", bin=12)
 ```
 ##
-####################################################################################################
+##########################################################################################
 ## Fig 7. Requirement of a Free RNA End for Promoting R-loop Formation
 ## and Proposed Model for R-loop Initiation and Elongation
-####################################################################################################
+##########################################################################################
 ## Fig 7A
 The distance distribution of potential free RNA ends (TSS, TTS, TSS and TTS of tRNA/eRNAs) relative to the summits of R-ChIP mapped R-loops
 ```{r,Dis2FreeEnd,fig.width=4.63,fig.height=3.82,fig.align = "center",message=F,warning=F}
@@ -869,9 +869,9 @@ hist(data$V1,xlim=c(0,3000),breaks = c(seq(-1,2999,by=200),max(data$V1)),
      freq = T, main="" , col="lightblue", xlab="Distance to Free End")
 ```
 ##
-####################################################################################################
+##########################################################################################
 ## Others (not shown in MC paper)
-####################################################################################################
+##########################################################################################
 ## *** tRNA R-loops (related to Fig 4A, B & C)
 Differences between Rloop(+) and Rloop(-) tRNAs
 ```{r cmpr w and w/o group,fig.width=2.94,fig.height=2.27,fig.align = "center",message=F,warning=F}

@@ -1,18 +1,176 @@
 ---
-title: "R-ChIP Technology Paper"
-output: word_document
+title: "R-ChIP MC Paper"
+output: html_document
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## *** Reproducibility of R-ChIP Data (Reads Count of 3Kb-Windows)
-Pearson's correlation coefficients of tag counts for each 3kb window between replicates were calculated to assess the reproducibility of R-ChIP data.
-```{r R-ChIP reproducibility HEK293,fig.width=6.46,fig.height=2.53,message=F,warning=F}
-rep1 <- read.table("Data/RChIP_Rep/chipseq.HEK293.D210N_rep1.ReadsCoverage",sep="\t")
-rep2 <- read.table("Data/RChIP_Rep/chipseq.HEK293.D210N_rep2.ReadsCoverage",sep="\t")
-rep3 <- read.table("Data/RChIP_Rep/chipseq.HEK293.D210N_rep3.ReadsCoverage",sep="\t")
-dele <- read.table("Data/RChIP_Rep/chipseq.HEK293.135AA.ReadsCoverage",sep="\t")
+## Common R Function
+```{r Common R Function}
+# a) Working directory
+setwd("~/Desktop/R-ChIP-Tech/Bin")
+# b) my own theme
+library(ggplot2)
+my_clear_theme = theme_bw() + 
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA),
+        legend.background = element_blank())
+# c) BinnedErrorBarPlot Function
+#    if x2/y2 are given, then normalize data[,x1/y1] by dividing data[,x2/y2]
+BinnedErrorBarPlot <- function(data,x1,y1,bin=15,x2=0,y2=0,xlab="x",ylab="y"){
+  if(x2 == 0){
+    bk <- as.double(quantile(data[,x1],probs = seq(0,1,1/bin)))
+    status <- .bincode(data[,x1],bk,include.lowest = T)
+    x <- data.frame(data[,x1],status)
+  }else{
+    bk <- as.double(quantile(data[,x1]/data[,x2],probs = seq(0,1,1/bin)))
+    status <- .bincode(data[,x1]/data[,x2],bk,include.lowest = T)
+    x <- data.frame(data[,x1]/data[,x2],status)
+  }
+  
+  if(y2 == 0){
+    y <- data.frame(data[,y1],status)
+  }else{
+    y <- data.frame(data[,y1]/data[,y2],status)
+  }
+  
+  me_x <- c(); q25_x <- c(); q75_x <- c();
+  me_y <- c(); q25_y <- c(); q75_y <- c();
+  for(i in 1:bin){
+    me_x[i]  <- median(x[status==i,1]);
+    q25_x[i]  <- quantile(x[status==i,1],probs = 0.25);
+    q75_x[i] <- quantile(x[status==i,1],probs = 0.75)
+    me_y[i]  <- median(y[status==i,1])
+    q25_y[i]  <- quantile(y[status==i,1],probs = 0.25)
+    q75_y[i] <- quantile(y[status==i,1],probs = 0.75)
+  }
+  mat <- as.data.frame(cbind(me_x,q25_x,q75_x,me_y,q25_y,q75_y))
+  
+  library(ggplot2)
+  p <- ggplot(mat,aes(x=me_x,y=me_y)) +
+    geom_errorbar(aes(ymin = q25_y,ymax = q75_y),col="blue") + 
+    geom_errorbarh(aes(xmin = q25_x,xmax = q75_x),col="blue") +
+    geom_point(col="red") +
+    xlab(xlab) +
+    ylab(ylab) +
+    theme(panel.grid.major = element_line(colour="NA"),
+          panel.grid.minor = element_line(colour="NA"),
+          panel.background = element_rect(fill="NA"),
+          panel.border = element_rect(colour="black", fill=NA))
+  print(p)
+  cor.test(x[,1],y[,1],method = "spearman")
+}
+# d) BinnedHeatmapPlot Function
+#    if x2/y2/z2 are given, then normalize data[,x1/y1/z1] by dividing data[,x2/y2/z2]
+BinnedHeatmapPlot <- function(data,z1,x1,y1,bin=6,x2=0,y2=0,z2=0){
+  if(x2 == 0){
+    bk1 <- as.double(quantile(data[,x1],probs = seq(0,1,1/bin)))
+    x   <- cbind(data[,x1],.bincode(data[,x1],bk1,include.lowest = T))
+  }else{
+    bk1 <- as.double(quantile(data[,x1]/data[,x2],probs = seq(0,1,1/bin)))
+    x   <- cbind(data[,x1]/data[,x2],.bincode(data[,x1]/data[,x2],bk1,include.lowest = T))
+  }
+  if(y2 == 0){
+    bk2 <- as.double(quantile(data[,y1],probs = seq(0,1,1/bin)))
+    y   <- cbind(data[,y1],.bincode(data[,y1],bk2,include.lowest = T))
+  }else{
+    bk2 <- as.double(quantile(data[,y1]/data[,y2],probs = seq(0,1,1/bin)))
+    y   <- cbind(data[,y1]/data[,y2],.bincode(data[,y1]/data[,y2],bk2,include.lowest = T))
+  }
+  if(z2==0){
+    z <- data[,z1]
+  }else{
+    z <- data[,z1]/data[,z2]
+  }
+  status <- cbind(x[,2],y[,2],x[,1],y[,1],z)
+  num <- matrix(0,nrow=bin,ncol=bin)
+  for (i in 1:nrow(status)){
+    num[status[i,1],status[i,2]] = num[status[i,1],status[i,2]] + 1
+  }
+  mat <- matrix(0,nrow=bin,ncol=bin)
+  for(i in 1:bin){
+    for (j in 1:bin){
+      mat[i,j] = median(status[status[,1]==i & status[,2]==j,5])
+    }
+  }
+  library(pheatmap)
+  pheatmap(mat,cluster_rows = F,cluster_cols = F)
+  status <- subset(status,rowSums(is.finite(status))==5)
+  summary(lm(status[,5] ~ status[,3] + status[,4]))
+}
+```
+
+####################################################################################################
+## * Figure 1. Genome-wide R-loop Profiling by Strand-specific R-ChIP
+####################################################################################################
+## * Fig 1F
+The signal intensity profile of R-ChIP data as well as the negative control (WKKD) and input in HEK293T cells.
+```{r D210N-WKKD-Input Profile,fig.width=2.46,fig.height=2.49,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+library(reshape2)
+wkkd  <- read.table("Data_MC/Profile_Fig1F/WKKD")
+input <- read.table("Data_MC/Profile_Fig1F/Input")
+d210n <- read.table("Data_MC/Profile_Fig1F/D210N")
+data  <- data.frame(apply(wkkd,2,mean),apply(input,2,mean),apply(d210n,2,mean))
+names(data)  = c("WKKD","Input","D210N")
+data$Position  = 1:500
+data <- melt(data,id.vars = "Position")
+ggplot(data,aes(x=Position,y=value,col=variable)) + 
+  geom_line(size=1) +
+  xlab("Genomic Region (5'-3')") + ylab("RPM") +
+  my_clear_theme +
+  scale_x_continuous(breaks=seq(0,500,by=100),
+                     labels=c("-2K", "", "5'", "3'","","2K")) +
+  theme(legend.position=c(.8,.8)) +
+  labs(col="")
+rm(wkkd,input,d210n,data)
+```
+## * Fig 1G
+Transcription activities in the sense or anti-sense orientation of R-loops.
+```{r Strandness (GRO-seq),fig.width=2.05,fig.height=2.39,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+data <- read.table("Data_MC/Strand_Fig1G/RPKM.data.frame",sep="\t")
+data$V2 = factor(data$V2,levels=c("same","oppo"))
+ggplot(data,aes(x=V2,y=V1,col=V2)) + 
+  geom_boxplot(outlier.colour = "NA",notch = T) +
+  coord_cartesian(ylim=c(0,25)) +
+  my_clear_theme +
+  xlab("") + ylab("GRO-seq (RPKM)") + guides(col=F) +
+  scale_x_discrete(labels=c("same" = "Sense", "oppo" = "Antisense"))
+rm(data)
+```
+## * Fig 1H
+The strand specificity of R-ChIP signals.
+```{r Strandness (R-ChIP),fig.width=2.46,fig.height=2.49,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+library(reshape2)
+sense <- read.table("Data_MC/Strand_Fig1H/D210N")
+antisense <- read.table("Data_MC/Strand_Fig1H/D210N.Rev")
+data  <- data.frame(apply(sense,2,mean),apply(antisense,2,mean))
+names(data) = c("Sense","Antisense")
+data$Position = 1:500
+data <- melt(data,id.vars = "Position")
+ggplot(data,aes(x=Position,y=value,col=variable)) + 
+  geom_line(size=1) +
+  xlab("Genomic Region (5'-3')") + ylab("RPM") +
+  my_clear_theme +
+  scale_x_continuous(breaks=seq(0,500,by=100),
+                     labels=c("-2K", "", "5'", "3'","","2K")) +
+  theme(legend.position=c(.8,.8)) +
+  labs(col="")
+rm(sense,antisense,data)
+```
+## * Fig S1C and E
+Pairwise comparison of three R-ChIP replicates performed on D210N expressing HEK293T cells.
+Pairwise comparison of R-ChIP replicates from ΔHC and D210N expressing HEK293T cells.
+```{r R-ChIP Rep HEK293,fig.width=6.46,fig.height=2.53,fig.align = "center",message=F,warning=F}
+rep1 <- read.table("Data_MC/RChIPRepli_FigsS1CE3A/chipseq.HEK293.D210N_rep1.ReadsCoverage",sep="\t")
+rep2 <- read.table("Data_MC/RChIPRepli_FigsS1CE3A/chipseq.HEK293.D210N_rep2.ReadsCoverage",sep="\t")
+rep3 <- read.table("Data_MC/RChIPRepli_FigsS1CE3A/chipseq.HEK293.D210N_rep3.ReadsCoverage",sep="\t")
+dele <- read.table("Data_MC/RChIPRepli_FigsS1CE3A/chipseq.HEK293.135AA.ReadsCoverage",sep="\t")
 
 par(mfrow=c(1,3))
 smoothScatter(log2(rep1[,4]),log2(rep2[,4]),xlim=c(0,12),ylim=c(0,12),
@@ -35,182 +193,66 @@ text(3,10,paste("R = ",round(cor(rep2[,4],dele[,4]),2),sep=""))
 smoothScatter(log2(rep3[,4]),log2(dele[,4]),xlim=c(0,12),ylim=c(0,12),
               xlab="D210N Rep3 (Log2 Tag Counts)",ylab="135AA (Log2 Tag Counts)")
 text(3,10,paste("R = ",round(cor(rep3[,4],dele[,4]),2),sep=""))
+rm(dele,rep1,rep2,rep3)
 ```
-```{r R-ChIP reproducibility K562,fig.width=3.39,fig.height=3.99,message=F,warning=F}
-rep1 <- read.table("Data/RChIP_Rep/chipseq.K562.D210N_rep1.ReadsCoverage",sep="\t")
-rep2 <- read.table("Data/RChIP_Rep/chipseq.K562.D210N_rep2.ReadsCoverage",sep="\t")
-smoothScatter(log2(rep1[,4]),log2(rep2[,4]),xlim=c(0,12),ylim=c(0,12),
-              xlab="Rep 1 (Log2 Tag Counts)",ylab="Rep 2 (Log2 Tag Counts)")
-text(3,10,paste("R = ",round(cor(rep1[,4],rep2[,4]),2),sep=""))
-```
-```{r R-ChIP reproducibility DRB HEK293,fig.width=6.46,fig.height=2.53,message=F,warning=F}
-noDRB1<- read.table("Data/RChIP_Rep/chipseq.D210N_noDRB_V5_rep1.ReadsCoverage",sep="\t")
-noDRB2<- read.table("Data/RChIP_Rep/chipseq.D210N_noDRB_V5_rep2.ReadsCoverage",sep="\t")
-DRB2h1<- read.table("Data/RChIP_Rep/chipseq.D210N_DRB2h_V5_rep1.ReadsCoverage",sep="\t")
-DRB2h2<- read.table("Data/RChIP_Rep/chipseq.D210N_DRB2h_V5_rep2.ReadsCoverage",sep="\t")
-post1 <- read.table("Data/RChIP_Rep/chipseq.D210N_postDRB30min_V5_rep1.ReadsCoverage",sep="\t")
-post2 <- read.table("Data/RChIP_Rep/chipseq.D210N_postDRB30min_V5_rep2.ReadsCoverage",sep="\t")
-
-par(mfrow=c(1,3))
-smoothScatter(log2(noDRB1[,4]),log2(noDRB2[,4]),xlim=c(0,12),ylim=c(0,12),
-              xlab="noDRB Rep 1 (Log2 Tag Counts)",ylab="noDRB Rep 2 (Log2 Tag Counts)")
-text(3,10,paste("R = ",round(cor(noDRB1[,4],noDRB2[,4]),2),sep=""))
-smoothScatter(log2(DRB2h1[,4]),log2(DRB2h2[,4]),xlim=c(0,12),ylim=c(0,12),
-              xlab="DRB 2h Rep 1 (Log2 Tag Counts)",ylab="DRB2h Rep 2 (Log2 Tag Counts)")
-text(3,10,paste("R = ",round(cor(DRB2h1[,4],DRB2h2[,4]),2),sep=""))
-smoothScatter(log2(post1[,4]),log2(post2[,4]),xlim=c(0,12),ylim=c(0,12),
-              xlab="postDRB Rep 2 (Log2 Tag Counts)",ylab="postDRB Rep 2 (Log2 Tag Counts)")
-text(3,10,paste("R = ",round(cor(post1[,4],post2[,4]),2),sep=""))
-```
-
-## *** Strand-specific Gene Expression (GRO-Seq)
-Strand-specific local expression levels of R-Loops regions were quantified by GRO-Seq reads with the same or opposite direction with R-Loops, seperately.
-```{r Strandness,fig.width=2.05,fig.height=2.39,message=F,warning=F}
-data <- read.table("Data/Strandness/RPKM.data.frame",sep="\t")
-data$V2 = factor(data$V2,levels=c("same","oppo"))
-library(ggplot2)
-ggplot(data,aes(x=V2,y=V1,col=V2)) + 
-  geom_boxplot(outlier.colour = "NA") +
-  coord_cartesian(ylim=c(0,25)) +
-    theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA)) +
-  xlab("") + ylab("GRO-seq (RPKM)") + guides(col=F) +
-  scale_x_discrete(labels=c("same" = "Same", "oppo" = "Opposite"))
-```
-
-## *** Comparasion of Narrow and Broad R-Loop Peaks (HEK293)
-We examined here the distribution of peak size, peak signal intensity & the correlation of signal intensity between broad and narrow R-loop peaks
-```{r Comparasion,fig.width=2.76,fig.height=3.05,message=F,warning=F}
-library(ggplot2)
-# Peak Signal Intensity
-data <- read.table("Data/NarrowVSBroad/HEK293.PeakSignal",sep="\t")
-ggplot(data,aes(x=V2,y=V1,col=V2)) + 
-  geom_boxplot(outlier.colour = "NA") +
-  coord_cartesian(ylim=c(0,3)) +
-    theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA)) +
-  theme(axis.text.x = element_blank()) +
-  xlab("") + ylab("R-loop Signal") + labs(col="")
-wilcox.test(data[data$V2=="Broad_Common",1],data[data$V2=="Broad_Specific",1])
-wilcox.test(data[data$V2=="Narrow_Common",1],data[data$V2=="Narrow_Specific",1])
-# Correlation
-par(mfrow=c(1,1))
-data <- read.table("Data/NarrowVSBroad/HEK293.Comm",sep="\t",header = T)
-smoothScatter(data[,1],data[,2],xlim=c(0,10),ylim=c(0,10),
-              xlab="R-loop Signal (Narrow)",ylab="R-loop Signal (Broad)")
-text(2,9,paste("R = ",round(cor(data[,1],data[,2]),2),sep=""))
-# Peak Size
-data <- read.table("Data/peakSize/peakSize",sep="\t")
+##
+####################################################################################################
+## Figure 2. Sequence Features and Genomic Distribution of R-ChIP Signals
+####################################################################################################
+## * Fig 2A
+Distribution of sizes of R-ChIP narrow and broad peakas by the MACS2 program.
+```{r Size Cmp (boxplot),fig.width=2.46,fig.height=2.19,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/NarrowVSBroad_Figs2AS2/peakSize",sep="\t")
 data <- subset(data,data$V2=="R-ChIP" & data$V3=="HEK293")
-ggplot(data,aes(x=V1,fill=interaction(V3,V2,V4))) + 
-  geom_density(alpha=0.5,size=0) +
-  scale_x_log10(breaks=c(250,500,1000,2000)) + 
-  xlab("Peak Size (bp)") + ylab("Density") + 
-  theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA)) +
-  theme(legend.position=c(1,1), legend.justification=c(1,1),
-        legend.background = element_rect(fill="transparent")) +
-  geom_vline(xintercept=median(data[data$V4=="Narrow","V1"]),color="white") +
-  geom_vline(xintercept=median(data[data$V4=="Broad","V1"]),color="white") +
-  labs(fill="") 
+data$V1 <- log10(data$V1)
+data$V4 <- factor(data$V4,levels=c("Narrow","Broad"))
+ggplot(data,aes(x=V4,y=V1,col=V4)) + geom_boxplot(notch = T,outlier.size = .5) +
+  scale_y_continuous(breaks=c(2,log10(150),log10(300),log10(500),3,log10(2000)),
+                     labels = c(100,150,300,500,1000,2000)) +
+  coord_cartesian(ylim=c(2,3.5)) + labs(col="Peak Size") +
+  my_clear_theme + xlab("") + ylab("Peak Size")
 ```
-
-## *** Comparasion of R-ChIP and DRIP
-Here, we showed the comparasion of R-loop peak size between R-ChIP and DRIP
-```{r R-ChIP vs DRIP}
-library(ggplot2)
-data <- read.table("Data/peakSize/peakSize",sep="\t")
-data <- subset(data,data$V3=="K562")
-ggplot(data,aes(x=V1,fill=interaction(V3,V2,V4))) + 
-  geom_density(alpha=0.5,size=0) +
-  scale_x_log10(breaks=c(1000,5000,10000,50000,100000)) + 
-  xlab("Peak Size (bp)") + ylab("Density") + 
-  theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA)) +
-  theme(legend.position=c(1,1), legend.justification=c(1,1),
-        legend.background = element_rect(fill="transparent")) +
-  geom_vline(xintercept=median(data[data$V4=="Narrow","V1"]),color="white") +
-  geom_vline(xintercept=median(data[data$V4=="Broad","V1"]),color="white") +
-  labs(fill="") 
-```
-
-## *** Annotation (distribution & peak intensity)
-R-loop signal intensity at different genomic regions & genomic distribution of R-loops
-```{r Annotation}
-library(ggplot2)
-data <- read.table("Data/Annotation/R-CHIP.K562.broad.anno",sep="\t")
-data$class = "Intergenic"; data[data$V9!=0,"class"] = "GeneBody"
-data[data$V8!=0,"class"] = "Terminator"; data[data$V7!=0,"class"] = "Promoter"
-data$class = factor(data$class,levels=c("Promoter","Terminator","GeneBody","Intergenic"))
-ggplot(data,aes(x=class,y=V5,col=class)) + geom_boxplot(outlier.colour = "NA") +
-  coord_cartesian(ylim=c(0,3)) +
-  theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA)) +
-  guides(col=F)
-
-table(data$class)
-pie(table(data$class))
-```
-
-## *** R-Loop Termination
-distribution of base composition, GC skew, peak size, consecutive Gs and G4 around the R-loop peak summit
-```{r Nucleotide Composition and Peak Distribution}
-# 1. Nucleotide Composition
+## * Fig 2B
+Base composition, G/C content and G/C skew associated with a composite R-loop map.
+```{r Sequence (HEK293),fig.width=2.80,fig.height=2.51,fig.align = "center",message=F,warning=F}
 library(reshape2)
 library(ggplot2)
-allseq <- read.table("Data/SequenceFeature/HEK293_Bin/HEK293.all.nucleotides",sep="\t",header = T)
-allseq[,2:5] <- allseq[,2:5]/apply(allseq[,2:5],1,sum)
-allseq$GC <- allseq$C+allseq$G
-allseq$GCSkew <- (allseq$G-allseq$C) / (allseq$G+allseq$C)
+allseq <- read.table("Data_MC/Sequence/tts.all.nucleotides",sep="\t",header = T)
 allseq <- melt(allseq,id.vars = "Pos")
 ggplot(data = allseq,aes(x=Pos-400,y=value,col=variable)) + 
-#  geom_line() + 
-  stat_smooth(method = "loess", span=1/3) + 
+  geom_line() + 
+#  stat_smooth(method = "loess", span=1/3) + 
   theme(panel.grid.major = element_line(colour="NA"),
         panel.grid.minor = element_line(colour="NA"),
         panel.background = element_rect(fill="NA"),
         panel.border = element_rect(colour="black", fill=NA)) +
-  labs(col="") + ylim(-0.05,0.7)
-# 2. R-loop span
-span <- read.table("Data/SequenceFeature/HEK293_Bin/HEK293.all.bed6+",sep="\t")
-lx <- sort(unique(span$V7))
-lstep <- c()
-for(i in 1:length(lx)){lstep[i] = length(which(span$V7>=lx[i]))/length(span$V7)}
-rx <- sort(unique(span$V8))
-rstep <- c()
-for(i in 1:length(rx)){rstep[i] = length(which(span$V8>=rx[i]))/length(span$V8)}
-step <- data.frame(pos = c(-lx,rx),freq = c(lstep,rstep))
-step <- step[step$pos>=-400 & step$pos<=400,]
-ggplot(data = step[order(step$pos),],aes(x=pos,y=freq)) + 
-  geom_step() + xlim(-400,400)
-# 3. Combined 1 & 2
-ggplot(data = step[order(step$pos),],aes(x=pos,y=freq))  +
-  geom_step() +
-  stat_smooth(data=allseq, aes(x=Pos-400,y=value,col=variable),method = "loess", span=1/3) +
-  coord_cartesian(xlim=c(-400,400))
+  labs(col="") + ylim(-0.05,0.7) + xlab("Distance to R-loop summit (nt)")
 ```
-```{r G4 Distribution}
-# 1. Consecutive Gs
-case <- c(12869,12496,10277,5440,1557)/12906
-cont <- c(11261,6756,2220,562,120)/12906
-barplot(rbind(case,cont),beside = T,ylim=c(0,1),
-        names.arg = paste("G",2:6,sep=""),
-        xlab="Consecutive Gs",ylab="R-loop%")
-# 2. Venn Pie
+```{r Rloop Sig (HEK293),fig.width=2.52,fig.height=3.67,fig.align = "center",message=F,warning=F}
+signal <- read.table("Data_MC/Signal/summit400.signal")
+input  <- read.table("Data_MC/Signal/summit400.input")
+plot(seq(-400,400,by=1),apply(signal,2,mean) - apply(input,2,mean),type='l',
+     xlab="Distance to R-loop summit",ylab="RPM")
+rm(signal,input)
+```
+## * Fig 2C
+Percentages of the total R-loop number according to associated consecutive G numbers (G-clusters) in the ±50 bp flanking region of the G/C skew summit in comparison with background.
+```{r Consective Gs, fig.width=2.50,fig.height=2.40,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/Sequence/HEK293.consecutiveGs")
+data$num = c(2:6,2:6)
+ggplot(data,aes(x=num,y=V2/12906,fill=V3)) + 
+  geom_bar(stat="identity",position = position_dodge()) +
+  my_clear_theme +
+  ylab("% R-loop") + xlab("# Consecutive Gs") +
+  theme(legend.position = c(.8,.8)) + labs(fill="")
+```
+## * Fig 2D
+Coincidence between potential G-quadruplex (G4) forming regions and R-ChIP mapped R-loops, emphasizing predominant overlap on the non-template DNA strand.
+```{r G4 Dis,fig.width=4.45,fig.height=4.81,fig.align = "center",message=F,warning=F}
 G4=7724; noG4=12906-G4; Total=12906
 plus=7014;Other=Total-plus
 minus=1466;overlap=756;plusonly=plus-overlap;minusonly=minus-overlap;Other2 = noG4
-iniR=0.2 
+iniR=.2 
 colors=list(Other='white',G4='#e5f5e0',noG4='#a1d99b',plus='#3182bd',minus='#fec44f')
 library('plotrix')
 # from outer circle to inner circle
@@ -223,9 +265,12 @@ floating.pie(0,0, c(G4,noG4), radius=2*iniR, startpos=pi/2,
              col=as.character(colors[c('G4',"noG4")]), border = NA)
 legend(0.6, 3*iniR, gsub("_"," ",names(colors)[-1]),
        col=as.character(colors[-1]), pch=19,bty='n', ncol=1)
-# 3. G4 Distribution Relative to Summit
+```
+## * Fig 2E
+R-loop profile relative to sequences that have the potential to form G-quadruplex.
+```{r G4 profile,fig.width=2.60,fig.height=2.60,fig.align = "center",message=F,warning=F}
 library(ggplot2)
-data <- read.table("Data/SequenceFeature/HEK293_Base/HEK293.all.G4",sep="\t")
+data <- read.table("Data_MC/Sequence/HEK293.all.G4",sep="\t")
 ggplot(data,aes(x=V1-401,y=V2/12906)) + 
   geom_line() +
   xlab("Distance to R-Loop Summit") +
@@ -235,12 +280,190 @@ ggplot(data,aes(x=V1-401,y=V2/12906)) +
         panel.background = element_rect(fill="NA"),
         panel.border = element_rect(colour="black", fill=NA))
 ```
+## alternative of Fig 2F (overlapping annotation)
+The genomic distribution of R-ChIP mapped R-loops by RChIP in HEK293.
+```{r Genomic Dis (HEK293),fig.width=3.14,fig.height=1.04,fig.align = "center",message=F,warning=F}
+library(reshape2)
+library(ggplot2)
+# TSS, TSS/GB, TSS/GB/TTS, TSS/TTS, TTS, TTS/GB, GB, Inter 
+RChIP <- c(4512,1800,690,1075,170,297,2177,2185)
+End   <- cumsum(RChIP)
 
-## *** tRNA R-loops
-1) Classification of tRNAs
-2) Differences between R-loop(+) and R-loop(-) tRNAs
-3) Correlation of Rloop signal intensity between sense- and antisense- R-loops
-```{r pie venn plot}
+Row4 <- c(rep(1,End[4]),rep(0,End[8]-End[4]))
+Row3 <- c(rep(0,End[2]),rep(2,End[6]-End[2]),rep(0,End[8]-End[6]))
+Row2 <- c(rep(0,End[1]),rep(3,End[3]-End[1]),rep(0,End[5]-End[3]),
+          rep(3,End[7]-End[5]),rep(0,End[8]-End[7]))
+Row1 <- c(rep(0,End[7]),rep(4,End[8]-End[7]))
+
+data <- as.data.frame(cbind(Row1,Row2,Row3,Row4))
+data$Pos <- 1:nrow(data)
+data <- melt(data,id.vars = "Pos")
+ggplot(data,aes(y=variable,x=Pos/max(Pos),fill=as.factor(value))) + 
+  geom_tile() + my_clear_theme +
+  scale_fill_manual(values=c("000000","#1f78b4","#ff7f00","#add8e6","#33a02c")) +
+  guides(fill=F) + xlab("") + ylab("") +
+  scale_y_discrete(labels=c("Intergenic","GeneBody","TTS","TSS")) +
+  scale_x_continuous(labels=paste(seq(0,100,by=25),"%",sep="")) +
+  geom_vline(xintercept = End/max(End),linetype=1,col="grey",alpha=0.5)
+  
+```
+## * Fig 2G
+R-loop signal intensity at different genomic regions
+```{r Regional Signal (HEK293),fig.width=2.46,fig.height=2.61,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/Signal/HEK293.RChIP.anno")
+data$V13 <- factor(data$V13,levels=c("TSS","Genebody","TTS","Inter"))
+ggplot(data,aes(x=V13,y=V5,col=V13)) + 
+  geom_boxplot(outlier.colour = "NA",notch = T) +
+  coord_cartesian(ylim=c(0,1.5)) +
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA)) +
+  guides(col=F) + xlab("") + ylab("R-loop Signal")
+
+```
+## * Fig S2B
+Overall R-loop signal intensity associated with each of the four R-ChIP groups.
+```{bash eval = F, echo = T}
+# Peaks
+broad=../../data/R-ChIP/HEK293/peaks/broad/all.peaks.bed6
+narrow=../../data/R-ChIP/HEK293/peaks/narrow/all.peaks.bed6
+cell=HEK293
+# For Venn
+echo "Common (Broad)"
+bedtools intersect -a $broad  -b $narrow -wa -s | sort -u | wc -l
+echo "Common (Narrow)"
+bedtools intersect -a $narrow -b $broad  -wa -s | sort -u | wc -l
+echo "Broad Specific"
+bedtools intersect -a $broad  -b $narrow -wa -s -v | sort -u | wc -l
+echo "Narrow Specific"
+bedtools intersect -a $narrow -b $broad  -wa -s -v | sort -u | wc -l
+```
+```{r Signal Cmp (Narrow vs Broad),fig.width=3.56,fig.height=1.70,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+data <- read.table("Data_MC/NarrowVSBroad_Figs2AS2/HEK293.PeakSignal",sep="\t")
+ggplot(data,aes(x=V2,y=V1,col=V2)) + 
+  geom_boxplot(outlier.colour = "NA") +
+  coord_cartesian(ylim=c(0,1.8)) +
+    theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA)) +
+  theme(axis.text.x = element_blank()) +
+  xlab("") + ylab("R-loop Signal") + labs(col="")
+wilcox.test(data[data$V2=="Broad_Common",1],data[data$V2=="Broad_Specific",1])
+wilcox.test(data[data$V2=="Narrow_Common",1],data[data$V2=="Narrow_Specific",1])
+```
+##
+####################################################################################################
+## Fig 3. Systematic Comparison of R-loops Captured by the Catalytically Dead RNASEH1 versus S9.6
+####################################################################################################
+## * Fig 3A
+Peak Size (RChIP vs DRIP)
+```{r Peak Size (vs DRIP),fig.width=2.46,fig.height=2.30,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/peakSize.3tech")
+data$V2=factor(data$V2,levels=c("R-ChIP","RDIP","DRIP","DRIPc"))
+data <- subset(data,data$V3=="K562")
+ggplot(data,aes(x=V3,y=log10(V1),fill=V2)) + 
+  geom_boxplot(notch = T,outlier.size = 0.4) + 
+  my_clear_theme +
+  scale_y_continuous(breaks=c(2,log10(150),log10(300),log10(500),3,log10(2000),4,5),
+                     labels = c(100,150,300,500,1000,2000,10000,100000)) +
+  ylab("Peak Size") + xlab("") + labs(fill="")
+```
+## alternative of Fig 3D (overlapping annotation)
+The overall genomic distribution of R-loops mapped by R-ChIP and DRIP-seq.
+```{r,Genomic Dis (K562),fig.width=3.14,fig.height=1.04,fig.align = "center",message=F,warning=F}
+library(reshape2)
+library(ggplot2)
+# TSS, TSS/GB, TSS/GB/TTS, TSS/TTS, TTS, TTS/GB, GB, Inter 
+RChIP <- c(2794,1226,567,937,106,166,1721,2177)
+# or
+DRIP <- c(229,1741,4039,184,185,804,1125,377)
+End   <- cumsum(DRIP)
+
+Row4 <- c(rep(1,End[4]),rep(0,End[8]-End[4]))
+Row3 <- c(rep(0,End[2]),rep(2,End[6]-End[2]),rep(0,End[8]-End[6]))
+Row2 <- c(rep(0,End[1]),rep(3,End[3]-End[1]),rep(0,End[5]-End[3]),
+          rep(3,End[7]-End[5]),rep(0,End[8]-End[7]))
+Row1 <- c(rep(0,End[7]),rep(4,End[8]-End[7]))
+
+data <- as.data.frame(cbind(Row1,Row2,Row3,Row4))
+data$Pos <- 1:nrow(data)
+data <- melt(data,id.vars = "Pos")
+ggplot(data,aes(y=variable,x=Pos/max(Pos),fill=as.factor(value))) + 
+  geom_tile() + my_clear_theme +
+  scale_fill_manual(values=c("000000","#1f78b4","#ff7f00","#add8e6","#33a02c")) +
+  guides(fill=F) + xlab("") + ylab("") +
+  scale_y_discrete(labels=c("Intergenic","GeneBody","TTS","TSS")) +
+  scale_x_continuous(labels=paste(seq(0,100,by=25),"%",sep="")) +
+  geom_vline(xintercept = c(0,End/max(End)),linetype=1,col="grey",alpha=0.5)
+```
+## Fig 3E, S3B (similar to Fig 2B)
+## Fig 3F, S3C (similar to Fig 1F)
+## * Fig S3A
+Pairwise comparison of three R-ChIP replicates performed on D210N expressing HEK293T cells.
+```{r R-ChIP Rep K562,fig.width=3.39,fig.height=3.99,message=F,warning=F}
+rep1 <- read.table("Data_MC/RChIPRepli_FigsS1CE3A/chipseq.K562.D210N_rep1.ReadsCoverage",sep="\t")
+rep2 <- read.table("Data_MC/RChIPRepli_FigsS1CE3A/chipseq.K562.D210N_rep2.ReadsCoverage",sep="\t")
+smoothScatter(log2(rep1[,4]),log2(rep2[,4]),xlim=c(0,12),ylim=c(0,12),
+              xlab="Rep 1 (Log2 Tag Counts)",ylab="Rep 2 (Log2 Tag Counts)")
+text(3,10,paste("R = ",round(cor(rep1[,4],rep2[,4]),2),sep=""))
+rm(rep1,rep2)
+```
+## Fig S4A & 4B
+(RDIP) Base composition, G/C content and G/C skew associated with a composite R-loop map.
+```{r Nuc Comp RDIP,fig.width=2.94,fig.height=2.28,message=F,warning=F}
+library(reshape2)
+library(ggplot2)
+allseq <- read.table("Data_MC/Sequence/HEK293.RDIP.all.nucleotides",sep="\t",header = T)
+allseq <- melt(allseq,id.vars = "Pos")
+ggplot(data = allseq,aes(x=Pos-800,y=value,col=variable)) + 
+#  geom_line() + 
+  stat_smooth(method = "loess", span=1/3) + 
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA)) +
+  labs(col="") + ylim(-0.05,0.7)
+```
+```{r RDIP signalfig.width=2.52,fig.height=3.67,fig.align = "center",message=F,warning=F}
+signal <- read.table("Data_MC/Signal/RDIP.summit.800.signal")
+input  <- read.table("Data_MC/Signal/RDIP.summit.800.input")
+plot(seq(-400,400,by=1),apply(signal,2,mean) - apply(input,2,mean),type='l',
+     xlab="Distance to R-loop summit",ylab="RPM")
+rm(signal,input)
+```
+(DRIPc) Base composition, G/C content and G/C skew associated with a composite R-loop map.
+```{r Nuc Comp DRIPc,fig.width=2.94,fig.height=2.28,message=F,warning=F}
+library(reshape2)
+library(ggplot2)
+allseq <- read.table("Data_MC/Sequence/DRIPc.all.nucleotides",sep="\t",header = T)
+allseq <- melt(allseq,id.vars = "Pos")
+ggplot(data = allseq,aes(x=Pos-4000,y=value,col=variable)) + 
+#  geom_line() + 
+  stat_smooth(method = "loess", span=1/3) + 
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA)) +
+  labs(col="") + ylim(-0.05,0.7)
+rm(allseq)
+```
+```{r DRIPc signal,fig.width=2.52,fig.height=3.67,fig.align = "center",message=F,warning=F}
+signal <- read.table("Data_MC/Signal/shuf")
+plot(seq(-4000,4000,by=1),apply(signal,2,mean),type='l',
+     xlab="Distance to R-loop summit",ylab="RPM")
+rm(signal)
+```
+
+##
+####################################################################################################
+## Fig 4. Other R-loop Hotspots in the Human Genome
+####################################################################################################
+## * Fig 4A, S5A & S5B
+R-loop associated tRNAs by R-ChIP in HepG2 and K562 cell lines, and by DRIP-seq
+```{r pie venn plot,fig.width=6.34,fig.height=4.21,fig.align = "center",message=F,warning=F}
 # HEK293 R-ChIP
 Total=360+81+73+92;Lowlyexpressed=81;Nonexpressed=73;Nonalignable=92;Expressed=360
 Wrloop=280;WOrloop=Expressed-Wrloop;Other=Total-Wrloop-WOrloop
@@ -252,7 +475,7 @@ Wrloop=299;WOrloop=Expressed-Wrloop;Other=Total-Wrloop-WOrloop
 Samerloop=280;Other2 = Total-Samerloop
 Oppositerloop=269;Overlap=250;SingleSame=Samerloop-Overlap;Singleoppo=Oppositerloop-Overlap;Other3=Total-Wrloop
 # plot
-iniR=0.2 
+iniR=0.4 
 colors=list(Other='white',Nonalignable='#e5f5e0',Nonexpressed='#a1d99b',
             Lowlyexpressed='#3182bd',Expressed='#fec44f',Wrloop='#fc9272',
             WOrloop='#9ecae1',Samerloop='#ffeda0',Oppositerloop='#fee0d2')
@@ -289,72 +512,12 @@ floating.pie(0,0, c(Expressed,Lowlyexpressed,Nonexpressed,Nonalignable), radius=
 legend(0.6, 3*iniR, gsub("_"," ",names(colors)[-1]),
        col=as.character(colors[-1]), pch=19,bty='n', ncol=1)
 ```
-```{r comparison between w and w/o group}
-library("ggplot2")
-data <- read.table("Data/tRNA/HEK293.RChIP.uniqtRNAs.bed6",sep="\t",na.strings = "NA")
-data <- subset(data,data$V10>=10)
-data$V15 = "w"
-wo <- which(is.na(data$V12) & is.na(data$V14))
-data[wo,"V15"] = "wo"
-data$V15 <- factor(data$V15,levels=c("wo","w"))
-
-pvalue = format(wilcox.test(data[data$V15=="wo",8],data[data$V15=="w",8])$p.value,scientific = T)
-ggplot(data,aes(x=V15,y=V8,fill=V15)) + geom_violin() + ylim(0,1.1) +
-  geom_boxplot(width=0.1,outlier.colour = "NA",fill="white") +
-  ylab("Alignable Proportion") +
-  theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA))
-
-pvalue = format(wilcox.test(data[data$V15=="wo",10],data[data$V15=="w",10])$p.value,scientific = T)
-ggplot(data,aes(x=V15,y=V10,fill=V15)) + geom_violin() +
-  geom_boxplot(width=0.1,outlier.colour = "NA",fill="white") +
-  ylab("GRO-Seq (RPKM)") + ylim(0,170) +
-  theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA))
-
-```
-```{r correlation between sense & antisense R-loop}
-data <- read.table("Data/tRNA/HEK293.RChIP.uniqtRNAs.bed6",sep="\t",na.strings = "NA")
-data <- subset(data,data$V10>=10)
-SA <- data[!is.na(data$V11) & !is.na(data$V13),c(12,14)]
-names(SA) <- c("V1","V2")
-bk <- as.double(quantile(SA$V1,probs=seq(0,1,0.1)))
-SA$V3 <- .bincode(SA$V1,breaks = bk,include.lowest = T)
-
-me_x <- c(); q5_x <- c(); q95_x <- c();
-me_y <- c(); q5_y <- c(); q95_y <- c();
-for(i in 1:10){
-  me_x[i]  <- median(SA[SA$V3==i,"V1"])
-  q5_x[i]  <- quantile(SA[SA$V3==i,"V1"],probs = 0.25)
-  q95_x[i] <- quantile(SA[SA$V3==i,"V1"],probs = 0.75)
-  me_y[i]  <- median(SA[SA$V3==i,"V2"])
-  q5_y[i]  <- quantile(SA[SA$V3==i,"V2"],probs = 0.25)
-  q95_y[i] <- quantile(SA[SA$V3==i,"V2"],probs = 0.75)
-}
-
-mat <- as.data.frame(cbind(me_x,q5_x,q95_x,me_y,q5_y,q95_y))
-library(ggplot2)
-ggplot(mat,aes(x=me_x,y=me_y)) +
-  geom_errorbar(aes(ymin = q5_y,ymax = q95_y),col="blue") + 
-  geom_errorbarh(aes(xmin = q5_x,xmax = q95_x),col="blue") +
-  geom_point(col="red") +
-  xlab("Sense R-Loop Signal") + 
-  ylab("Antisense R-Loop Signal") +
-  theme(panel.grid.major = element_line(colour="NA"),
-        panel.grid.minor = element_line(colour="NA"),
-        panel.background = element_rect(fill="NA"),
-        panel.border = element_rect(colour="black", fill=NA)) +
-  theme(legend.position=c(0,1), legend.justification=c(0,1))
-
-cor(SA$V1,SA$V2)
-```
-
-## *** Pol-II decay and R-loop decay by ChIP-PCR and R-ChIP PCR, respectively
-Detailed analysis for PCR data of 11 genes
+##
+####################################################################################################
+## Fig 5. Elevated RNAPII pausing at TSS allows for increased R-loop formation
+####################################################################################################
+## Fig 5B & S6B
+Pol-II decay and R-loop decay by ChIP-PCR and R-ChIP PCR, respectively
 ```{r R-ChIP PCR}
 library("ggplot2")
 library("reshape2")
@@ -594,188 +757,186 @@ ggplot(halftime,aes(x=Class,y=as.numeric(as.vector(Half)),col=Class)) +
   ylab("Half Life (min)") + xlab("") + 
   theme(axis.text.x = element_blank())
 ```
+## Fig 5E
+Signal intensity distribution of overall R-ChIP in response to DRB treatment [DRB(+)] and removal (Post-DRB). 
+```{r DRB Rloop Signal,fig.width=2.18,fig.height=2.36,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/DRBrelated/ActiveTSS-Rloop")
+names(data)[19:21] = c("DRB(-)","DRB(+)","Post-DRB")
+data <- melt(data[,c(19:21)])
+ggplot(data,aes(x=variable,y=value,fill=variable)) + 
+  geom_boxplot(notch = T,outlier.colour = NA) +
+  my_clear_theme +
+  coord_cartesian(ylim=c(0,3)) +
+  xlab("") + ylab("R-loop Signal") + guides(fill=F)
+```
+## Fig 5F
+Signal intensity distribution of overall GRO-seq in response to DRB treatment [DRB(+)] and removal (Post-DRB). 
+```{r GRO-seq Signal,fig.width=2.18,fig.height=2.36,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/DRBrelated/ActiveTSS-Rloop")
+names(data)[c(7,9,11)] = c("DRB(-)","DRB(+)","Post-DRB")
+data <- melt(data[,c(7,9,11)])
+ggplot(data,aes(x=variable,y=value,fill=variable)) + 
+  geom_boxplot(notch = T,outlier.colour = NA) +
+  my_clear_theme +
+  coord_cartesian(ylim=c(0,100)) +
+  xlab("") + ylab("GRO-seq Signal") + guides(fill=F)
+```
+## Fig S6A
+Reproducibility of R-ChIP and GRO-seq
+```{r R-ChIP Rep DRB HEK293,fig.width=6.46,fig.height=2.53,fig.align = "center",message=F,warning=F}
+noDRB1<- read.table("Data/RChIP_Rep/chipseq.D210N_noDRB_V5_rep1.ReadsCoverage",sep="\t")
+noDRB2<- read.table("Data/RChIP_Rep/chipseq.D210N_noDRB_V5_rep2.ReadsCoverage",sep="\t")
+DRB2h1<- read.table("Data/RChIP_Rep/chipseq.D210N_DRB2h_V5_rep1.ReadsCoverage",sep="\t")
+DRB2h2<- read.table("Data/RChIP_Rep/chipseq.D210N_DRB2h_V5_rep2.ReadsCoverage",sep="\t")
+post1 <- read.table("Data/RChIP_Rep/chipseq.D210N_postDRB30min_V5_rep1.ReadsCoverage",sep="\t")
+post2 <- read.table("Data/RChIP_Rep/chipseq.D210N_postDRB30min_V5_rep2.ReadsCoverage",sep="\t")
 
-## *** Analysis of R-ChIP data with DRB treatments
-Basic characterization of R-loops and the relationship between R-loop dynamics and PolII pausing/release
-```{r distribution of R-loop signal intensity}
-data <- read.table("Data/DRBrelated/DRBrelated.delta.density+")
-data[data<0] = 0
-mean <- as.data.frame(c(apply(data[,7:8],1,mean),
-                        apply(data[,9:10],1,mean),
-                        apply(data[,11:12],1,mean)))
-mean$time <- c(rep("noDRB",nrow(data)),
-               rep("DRB2h",nrow(data)),
-               rep("postDRB30min",nrow(data)))
-names(mean) <- c("rloop","time")
-
+par(mfrow=c(1,3))
+smoothScatter(log2(noDRB1[,4]),log2(noDRB2[,4]),xlim=c(0,12),ylim=c(0,12),
+              xlab="noDRB Rep 1 (Log2 Tag Counts)",ylab="noDRB Rep 2 (Log2 Tag Counts)")
+text(3,10,paste("R = ",round(cor(noDRB1[,4],noDRB2[,4]),2),sep=""))
+smoothScatter(log2(DRB2h1[,4]),log2(DRB2h2[,4]),xlim=c(0,12),ylim=c(0,12),
+              xlab="DRB 2h Rep 1 (Log2 Tag Counts)",ylab="DRB2h Rep 2 (Log2 Tag Counts)")
+text(3,10,paste("R = ",round(cor(DRB2h1[,4],DRB2h2[,4]),2),sep=""))
+smoothScatter(log2(post1[,4]),log2(post2[,4]),xlim=c(0,12),ylim=c(0,12),
+              xlab="postDRB Rep 2 (Log2 Tag Counts)",ylab="postDRB Rep 2 (Log2 Tag Counts)")
+text(3,10,paste("R = ",round(cor(post1[,4],post2[,4]),2),sep=""))
+```
+##
+####################################################################################################
+## Fig 6. Correlation of R-loop Levels with G/C Content and RNAPII Pausing at TSSs
+####################################################################################################
+## Fig 6A
+R-loops were divided into three groups according to the signal intensity (green) and the sequence features associated with each group are shown.
+Four datasets were tested: HEK293 (3 replicates, MC paper), HEK293.TSS (3 replicates), DRBrelated, DRBrelated.TSS
+```{r Rloop Sig vs Sequence,fig.width=2.71,fig.height=2.49,fig.align = "center",message=F,warning=F}
+library(reshape2)
 library(ggplot2)
-ggplot(mean,aes(x=rloop,fill=time)) + 
-  geom_density(alpha=0.6,size=0) +
-  coord_cartesian(xlim=c(0,4)) + 
+# hig vs med vs low
+allseq <- read.table("Data_MC/Sequence/HEK293.hig.nucleotides",sep="\t",header = T)
+allseq <- melt(allseq,id.vars = "Pos")
+ggplot(data = allseq,aes(x=Pos-400,y=value,col=variable)) + 
+  geom_line() + 
+#  stat_smooth(method = "loess", span=1/3) + 
   theme(panel.grid.major = element_line(colour="NA"),
         panel.grid.minor = element_line(colour="NA"),
         panel.background = element_rect(fill="NA"),
         panel.border = element_rect(colour="black", fill=NA)) +
-  theme(legend.position=c(1,1), legend.justification=c(1,1),
-        legend.background=element_rect(fill="transparent")) +
-  geom_vline(xintercept = median(apply(data[,7:8],1,mean)),color="white") +
-  geom_vline(xintercept = median(apply(data[,9:10],1,mean)),color="white") +
-  geom_vline(xintercept = median(apply(data[,11:12],1,mean)),color="white")
+  labs(col="") + ylim(-0.05,0.7) + xlab("Distance to R-loop summit (nt)") +
+  ylab("Base composition or GC skew")
 ```
-```{r significantly up- or down-regulated genes}
-data <- read.table("Data/DRBrelated/DRBrelated.delta.density+")
-data[data<0] = 0
-pvalue <- matrix(nrow=nrow(data),ncol=4)
-for(i in 1:nrow(data)){
-  if(sum(data[i,9:10]) >= sum(data[i,7:8])){
-    pvalue[i,1] = 1
-    pvalue[i,2] = t.test(data[i,9:10],data[i,7:8],alternative = 'g')$p.value <= 0.05
-  }else{
-    pvalue[i,1] = -1
-    pvalue[i,2] = t.test(data[i,9:10],data[i,7:8],alternative = 'l')$p.value <= 0.05
-  }
-  if(sum(data[i,11:12]) >= sum(data[i,7:8])){
-    pvalue[i,3] = 1
-    pvalue[i,4] = t.test(data[i,11:12],data[i,7:8],alternative = 'g')$p.value <= 0.05
-  }else{
-    pvalue[i,3] = -1
-    pvalue[i,4] = t.test(data[i,11:12],data[i,7:8],alternative = 'l')$p.value <= 0.05
-  }
+```{r Rloop Sig (H-M-L),fig.width=2.52,fig.height=3.67,fig.align = "center",message=F,warning=F}
+signal <- read.table("Data_MC/Signal/High.signal")
+input  <- read.table("Data_MC/Signal/High.input.signal")
+plot(seq(-400,400,by=1),apply(signal,2,mean) - apply(input,2,mean),type='l',
+     xlab="Distance to R-loop summit",ylab="RPM",ylim=c(0,2))
+rm(signal,input)
+```
+## Fig 6B-E
+R-loop ~ GC + local expression, local expression ~ R-loop + GC
+```{r colorgrid,fig.width=2.94,fig.height=2.27,fig.align = "center",message=F,warning=F}
+data <- read.table("Data_MC/DRBrelated/ActiveTSS-Rloop")
+# Rloop ~ GC + Expression
+BinnedHeatmapPlot(data,z1=19,x1=23,y1=8,bin=5)
+# Rloop ~ GC + PP (promoter proximal region expression)
+BinnedHeatmapPlot(data,z1=19,x1=23,y1=7,bin=5)
+# FC Rloop ~ GC + FC PP (induction)
+BinnedHeatmapPlot(data,z1=20,x1=23,y1=9,z2=19,y2=7,bin=5)
+# FC Rloop ~ GC + FC PP (decay)
+data[,24] = data[,9] - data[,11]; data[data$V24<0,24] = 0
+data[,25] = data[,20] - data[,21]; data[data$V25<0,25] = 0
+data <- subset(data,data$V20!=0)
+BinnedHeatmapPlot(data,z1=25,x1=23,y1=24,y2=9,z2=20,bin=5)
+
+# R-loop retard the following PolII
+BinnedErrorBarPlot(data,x1=19,y1=9,y2=7,xlab="Steady State R-loop\nSignal",
+                   ylab="Increased GRO-seq\nSignal", bin=12)
+BinnedErrorBarPlot(data,x1=20,y1=24,y2=9,xlab="R-loop Signal\n(DRB2h)",
+                   ylab="Decreased GRO-seq\nSignal", bin=12)
+```
+##
+####################################################################################################
+## Fig 7. Requirement of a Free RNA End for Promoting R-loop Formation
+## and Proposed Model for R-loop Initiation and Elongation
+####################################################################################################
+## Fig 7A
+The distance distribution of potential free RNA ends (TSS, TTS, TSS and TTS of tRNA/eRNAs) relative to the summits of R-ChIP mapped R-loops
+```{r,Dis2FreeEnd,fig.width=4.63,fig.height=3.82,fig.align = "center",message=F,warning=F}
+# summit dis to free end / peak dis to free end
+data <- read.table("Data_MC/Freeend/summitdis2freeend")
+data <- subset(data,data$V1 < 3000)
+hist(data$V1,xlim=c(0,3000),breaks = c(seq(-1,2999,by=200),max(data$V1)),
+     freq = T, main="" , col="lightblue", xlab="Distance to Free End")
+```
+##
+####################################################################################################
+## Others (not shown in MC paper)
+####################################################################################################
+## *** tRNA R-loops (related to Fig 4A, B & C)
+Differences between Rloop(+) and Rloop(-) tRNAs
+```{r cmpr w and w/o group,fig.width=2.94,fig.height=2.27,fig.align = "center",message=F,warning=F}
+library("ggplot2")
+data <- read.table("Data/tRNA/HEK293.RChIP.uniqtRNAs.bed6",sep="\t",na.strings = "NA")
+data <- subset(data,data$V10>=10)
+data$V15 = "w"
+wo <- which(is.na(data$V12) & is.na(data$V14))
+data[wo,"V15"] = "wo"
+data$V15 <- factor(data$V15,levels=c("wo","w"))
+
+pvalue = format(wilcox.test(data[data$V15=="wo",8],data[data$V15=="w",8])$p.value,scientific = T)
+ggplot(data,aes(x=V15,y=V8,fill=V15)) + geom_violin() + ylim(0,1.1) +
+  geom_boxplot(width=0.1,outlier.colour = "NA",fill="white") +
+  ylab("Alignable Proportion") +
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA))
+
+pvalue = format(wilcox.test(data[data$V15=="wo",10],data[data$V15=="w",10])$p.value,scientific = T)
+ggplot(data,aes(x=V15,y=V10,fill=V15)) + geom_violin() +
+  geom_boxplot(width=0.1,outlier.colour = "NA",fill="white") +
+  ylab("GRO-Seq (RPKM)") + ylim(0,170) +
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA))
+
+```
+Correlation of Rloop signal intensity between sense- and antisense- Rloops
+```{r cor between sense & antisense R-loop,fig.width=2.49,fig.height=2.27,fig.align = "center",message=F,warning=F}
+data <- read.table("Data/tRNA/HEK293.RChIP.uniqtRNAs.bed6",sep="\t",na.strings = "NA")
+data <- subset(data,data$V10>=10)
+SA <- data[!is.na(data$V11) & !is.na(data$V13),c(12,14)]
+names(SA) <- c("V1","V2")
+bk <- as.double(quantile(SA$V1,probs=seq(0,1,0.1)))
+SA$V3 <- .bincode(SA$V1,breaks = bk,include.lowest = T)
+
+me_x <- c(); q5_x <- c(); q95_x <- c();
+me_y <- c(); q5_y <- c(); q95_y <- c();
+for(i in 1:10){
+  me_x[i]  <- median(SA[SA$V3==i,"V1"])
+  q5_x[i]  <- quantile(SA[SA$V3==i,"V1"],probs = 0.25)
+  q95_x[i] <- quantile(SA[SA$V3==i,"V1"],probs = 0.75)
+  me_y[i]  <- median(SA[SA$V3==i,"V2"])
+  q5_y[i]  <- quantile(SA[SA$V3==i,"V2"],probs = 0.25)
+  q95_y[i] <- quantile(SA[SA$V3==i,"V2"],probs = 0.75)
 }
-a <- table(apply(pvalue[,1:2],1,function(x){paste(x,collapse = "")}))[1:4]
-b <- table(apply(pvalue[,3:4],1,function(x){paste(x,collapse = "")}))[1:4]
-bar <- cbind(as.numeric(c(a,b)),rep(c("Down","Sig_Down","Up","Sig_Up"),2),
-             rep(c("DRB2h","postDRB30min"),each=4))
-bar <- as.data.frame(bar[,1:3])
-bar$V1 = as.numeric(as.vector(bar$V1))
-bar[c(1:2,5:6),"V1"] = -bar[c(1:2,5:6),"V1"]
-bar$V1 = bar$V1/nrow(data)
-bar$V2 = factor(bar$V2,levels=c("Sig_Down","Down","Sig_Up","Up"))
-ggplot(bar,aes(x=V3,y=as.numeric(as.vector(bar$V1)),fill=V2)) + 
-  geom_bar(stat = "identity") + scale_y_continuous(breaks=c(-0.4,-0.2,0,0.2,0.4,0.6,0.8)) +
+
+mat <- as.data.frame(cbind(me_x,q5_x,q95_x,me_y,q5_y,q95_y))
+library(ggplot2)
+ggplot(mat,aes(x=me_x,y=me_y)) +
+  geom_errorbar(aes(ymin = q5_y,ymax = q95_y),col="blue") + 
+  geom_errorbarh(aes(xmin = q5_x,xmax = q95_x),col="blue") +
+  geom_point(col="red") +
+  xlab("Sense R-Loop Signal") + 
+  ylab("Antisense R-Loop Signal") +
   theme(panel.grid.major = element_line(colour="NA"),
         panel.grid.minor = element_line(colour="NA"),
         panel.background = element_rect(fill="NA"),
         panel.border = element_rect(colour="black", fill=NA)) +
-  ylab("Percentage (%)") + xlab("") + labs(fill="")
+  theme(legend.position=c(0,1), legend.justification=c(0,1))
+
+cor(SA$V1,SA$V2)
 ```
-```{r R-loop (dynamics) related factors}
-# BinnedErrorBarPlot Function
-# if x2/y2 are given, then normalize data[,x1/y1] by dividing data[,x2/y2]
-BinnedErrorBarPlot <- function(data,x1,y1,bin=15,x2=0,y2=0,xlab="x",ylab="y"){
-  if(x2 == 0){
-    bk <- as.double(quantile(data[,x1],probs = seq(0,1,1/bin)))
-    status <- .bincode(data[,x1],bk,include.lowest = T)
-    x <- data.frame(data[,x1],status)
-  }else{
-    bk <- as.double(quantile(data[,x1]/data[,x2],probs = seq(0,1,1/bin)))
-    status <- .bincode(data[,x1]/data[,x2],bk,include.lowest = T)
-    x <- data.frame(data[,x1]/data[,x2],status)
-  }
-  
-  if(y2 == 0){
-    y <- data.frame(data[,y1],status)
-  }else{
-    y <- data.frame(data[,y1]/data[,y2],status)
-  }
-  
-  me_x <- c(); q5_x <- c(); q95_x <- c();
-  me_y <- c(); q5_y <- c(); q95_y <- c();
-  for(i in 1:bin){
-    me_x[i]  <- median(x[status==i,1]);
-    q5_x[i]  <- quantile(x[status==i,1],probs = 0.25);
-    q95_x[i] <- quantile(x[status==i,1],probs = 0.75)
-    me_y[i]  <- median(y[status==i,1])
-    q5_y[i]  <- quantile(y[status==i,1],probs = 0.25)
-    q95_y[i] <- quantile(y[status==i,1],probs = 0.75)
-  }
-  mat <- as.data.frame(cbind(me_x,q5_x,q95_x,me_y,q5_y,q95_y))
-  
-  library(ggplot2)
-  p <- ggplot(mat,aes(x=me_x,y=me_y)) +
-    geom_errorbar(aes(ymin = q5_y,ymax = q95_y),col="blue") + 
-    geom_errorbarh(aes(xmin = q5_x,xmax = q95_x),col="blue") +
-    geom_point(col="red") +
-    xlab(xlab) +
-    ylab(ylab) +
-    theme(panel.grid.major = element_line(colour="NA"),
-          panel.grid.minor = element_line(colour="NA"),
-          panel.background = element_rect(fill="NA"),
-          panel.border = element_rect(colour="black", fill=NA))
-  print(p)
-  cor.test(x[,1],y[,1])
-}
-# BinnedHeatmapPlot Function
-# if x2/y2/z2 are given, then normalize data[,x1/y1/z1] by dividing data[,x2/y2/z2]
-BinnedHeatmapPlot <- function(data,z1,x1,y1,bin=6,x2=0,y2=0,z2=0){
-  if(x2 == 0){
-    bk1 <- as.double(quantile(data[,x1],probs = seq(0,1,1/bin)))
-    x   <- cbind(data[,x1],.bincode(data[,x1],bk1,include.lowest = T))
-  }else{
-    bk1 <- as.double(quantile(data[,x1]/data[,x2],probs = seq(0,1,1/bin)))
-    x   <- cbind(data[,x1]/data[,x2],.bincode(data[,x1]/data[,x2],bk1,include.lowest = T))
-  }
-  if(y2 == 0){
-    bk2 <- as.double(quantile(data[,y1],probs = seq(0,1,1/bin)))
-    y   <- cbind(data[,y1],.bincode(data[,y1],bk2,include.lowest = T))
-  }else{
-    bk2 <- as.double(quantile(data[,y1]/data[,y2],probs = seq(0,1,1/bin)))
-    y   <- cbind(data[,y1]/data[,y2],.bincode(data[,y1]/data[,y2],bk2,include.lowest = T))
-  }
-  if(z2==0){
-    z <- data[,z1]
-  }else{
-    z <- data[,z1]/data[,z2]
-  }
-  status <- cbind(x[,2],y[,2],x[,1],y[,1],z)
-  num <- matrix(0,nrow=bin,ncol=bin)
-  for (i in 1:nrow(status)){
-    num[status[i,1],status[i,2]] = num[status[i,1],status[i,2]] + 1
-  }
-  mat <- matrix(0,nrow=bin,ncol=bin)
-  for(i in 1:bin){
-    for (j in 1:bin){
-      mat[i,j] = median(status[status[,1]==i & status[,2]==j,5])
-    }
-  }
-  library(pheatmap)
-  pheatmap(mat,cluster_rows = F,cluster_cols = F)
-  status <- subset(status,rowSums(is.finite(status))==5)
-  summary(lm(status[,5] ~ status[,3] + status[,4]))
-}
 
-# Input
-data <- read.table("Data/DRBrelated/tss.Rloop.Signal.active.Promoter.GC",sep="\t")
-# noDRB(1) / DRB2h(2) /PostDRB30min(3) Rloop signal,
-# noDRB(4) / DRB3h(5) /PostDRB10(6) / 20(7) /30(8) GRO-Seq, GC (9), length (10)
-data <- data.frame((data$V8+data$V9)/2,(data$V10+data$V11)/2,(data$V12+data$V13)/2,
-                   (data$V14+data$V15)/2,(data$V16+data$V17)/2,(data$V18+data$V19)/2,
-                   (data$V20+data$V21)/2,(data$V22+data$V23)/2,data$V24,data$V4-data$V3)
-names(data) <- paste("V",1:10,sep="")
-
-# Plot BinnedErrorBarPlot
-BinnedErrorBarPlot(data,9,1,xlab="GC Content",ylab="R-loop Signal Intensity")
-BinnedErrorBarPlot(data,4,1,xlab="Expression of Promoter−proximal Region",
-                  ylab="R-loop Signal Intensity")
-BinnedErrorBarPlot(data,9,y1=2,y2=1,xlab="GC Content",ylab="Induction Level of R-loop")
-
-BinnedErrorBarPlot(data,x1=5,x2=4,y1=2,y2=1,
-                  xlab="Induction Expression Level of\nPromoter−proximal Region",
-                  ylab="Induction Level of R-loop")
-data[,11] = data[,5]-data[,8]
-data[,12] = data[,2]-data[,3]
-BinnedErrorBarPlot(data,x1=11,y1=12,x2=5,y2=2,
-                  xlab="Deduction Expression Level of\nPromoter−proximal Region",
-                  ylab="Deduction Level of R-loop")
-
-# Plot BinnedErrorBarPlot
-data <- data[rowSums(is.na(as.matrix(data)))==0,]
-BinnedHeatmapPlot(data,z1=1,x1=9,y1=4,bin=5) # static rloop ~ GC + static GRO-seq
-BinnedHeatmapPlot(data,z1=2,x1=9,y1=5,y2=4,z2=1,bin=5) # fc rloop ~ GC + fc GRO-seq
-data[,11] = data[,5]-data[,8]
-data[,12] = data[,2]-data[,3]
-BinnedHeatmapPlot(data,z1=12,x1=9,y1=11,y2=5,z2=2,bin=5) # de rloop / DRB2h ~ GC + de GRO-seq / DRB2h
-data[,13] = (data[,5]-data[,8])/(data[,5]-data[,4])
-data[,14] = (data[,2]-data[,3])/(data[,2]-data[,1])
-BinnedHeatmapPlot(data,z1=14,x1=9,y1=13,bin=5) # de rloop / (DRB2h-0h) ~ GC + de GRO-seq / (DRB2h-0h)
-```
+## LASSO analysis (lars package)

@@ -938,5 +938,3 @@ ggplot(mat,aes(x=me_x,y=me_y)) +
 
 cor(SA$V1,SA$V2)
 ```
-
-## LASSO analysis (lars package)

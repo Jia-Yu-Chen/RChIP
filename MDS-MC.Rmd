@@ -1,0 +1,571 @@
+---
+title: "R-Loop analysis in splicing factor mutants"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Common R Function
+```{r Common R Function}
+# a) Working directory
+setwd("~/Desktop/R-Loop-MDS/Bin")
+# b) my own theme
+library(ggplot2)
+my_clear_theme = theme_bw() + 
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA),
+        legend.background = element_blank())
+# c) sum rows: sum the values for every Ns rows, where Ns are given by vector breaks
+gl.new <- function(breaks){
+  out <- numeric()
+  for(i in 1:length(breaks)){
+    out <- append(out,rep(i,breaks[i]))
+  }
+  out
+}
+sumRows <- function(data,breaks,n){
+  breaks <- gl.new(breaks)
+  data.frame(t(apply(data, 1, function(x) tapply(x, breaks, sum))))
+}
+```
+## Fig 1E-G. RASL-seq Analysis
+```{r RASL-seq}
+## read RASLdf.txt
+RASLdf <- read.table("Data/RASL-seq/RASLdf.txt",sep="\t",header = T)
+## Calculate the number of rows with NA and remove all rows with NA
+summary(RASLdf)
+RASLdfnoNA<- na.omit(RASLdf) 
+## Remove all rows with values in columns 5:32 representing all of the 
+## Control samples smaller than 5 and save the selected table to RASLdfread5
+RASLdfread5 <- RASLdfnoNA
+for (i in seq(from = 5, to = 32)) {
+  RASLdfread5 <- RASLdfread5[RASLdfread5[ , i]>4, ]
+}
+
+## Calculate the sums of all Ctr S and L isoform reads and mR
+sumctr_S <- rowSums(RASLdfread5[ , seq(from =5, to =31, by =2)])
+sumctr_L <- rowSums(RASLdfread5[ , seq(from =6, to =32, by =2)])
+mR <-(sumctr_S)/(sumctr_L)
+RASLdfread5mR <-data.frame(RASLdfread5[,1:4], mR=mR, RASLdfread5[,5:80])
+
+## calculate the modified log S/L ratio
+RASLdfread5ratio <- RASLdfread5mR[ ,6:81]
+ratio <- (RASLdfread5ratio[, c(TRUE,FALSE)] + RASLdfread5mR[,5]*5)/(RASLdfread5ratio[,!c(TRUE,FALSE)] + 5) 
+colnames(ratio)<-gsub("_S$","",colnames(ratio))
+ratio <- data.frame(RASLdfread5mR[1], ratio)
+ratio[1] <- paste(RASLdfread5mR$gene_symbol, factor(ratio[,1]), sep="_")
+ratio_allinfo <- data.frame(RASLdfread5mR[,2:4], ratio)
+
+## calculate the modified log S/L ratio minus logmR 
+RASLdfread5ratio <- RASLdfread5mR[ , 6:81]
+Zratio <- log2(RASLdfread5ratio[, c(TRUE, FALSE)] + RASLdfread5mR[ , 5]*5)-log2(RASLdfread5ratio[, !c(TRUE, FALSE)] + 5) - log2(RASLdfread5mR[ , 5])
+colnames(Zratio)<-gsub("_S$","",colnames(Zratio))
+Zratio <- data.frame(RASLdfread5mR[1], Zratio)
+Zratio[1] <- paste(RASLdfread5mR$gene_symbol, factor(Zratio[,1]), sep="_")
+Zratio_allinfo <- data.frame(RASLdfread5mR[,2:4], Zratio)
+
+## pick up Sig events
+pvalue <- matrix(nrow=nrow(Zratio),ncol=6)
+rownames(pvalue) <- Zratio$event_id
+for (i in (1:nrow(Zratio))){
+  pvalue[i,1] <- t.test(Zratio[i,16:17],Zratio[i,18:23])$p.value
+  pvalue[i,2] <- mean(as.numeric(ratio[i,18:23])) / mean(as.numeric(ratio[i,16:17]))
+  pvalue[i,3] <- t.test(Zratio[i,24:25],Zratio[i,26:29])$p.value
+  pvalue[i,4] <- mean(as.numeric(ratio[i,26:29])) / mean(as.numeric(ratio[i,24:25]))
+  pvalue[i,5] <- t.test(Zratio[i,24:25],Zratio[i,30:33])$p.value
+  pvalue[i,6] <- mean(as.numeric(ratio[i,30:33])) / mean(as.numeric(ratio[i,24:25]))
+}
+
+P95_S  <- which(pvalue[,1]<0.05 & pvalue[,2]> 1.5)
+P95_I  <- which(pvalue[,1]<0.05 & pvalue[,2]< 2/3)
+S34_S  <- which(pvalue[,3]<0.05 & pvalue[,4]> 1.5)
+S34_I  <- which(pvalue[,3]<0.05 & pvalue[,4]< 2/3)
+Q157_S <- which(pvalue[,5]<0.05 & pvalue[,6]> 1.5)
+Q157_I <- which(pvalue[,5]<0.05 & pvalue[,6]< 2/3)
+
+write(file="P95_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,names(c(P95_S,P95_I)))))
+write(file="S34_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,names(c(S34_S,S34_I)))))
+write(file="Q157_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,names(c(Q157_S,Q157_I)))))
+write(file="background_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,Zratio$event_id)))
+
+write(file="P95-S34_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,c(intersect(names(P95_S),names(S34_S)),intersect(names(P95_I),names(S34_I))))))
+write(file="P95-Q157_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,c(intersect(names(P95_S),names(Q157_S)),intersect(names(P95_I),names(Q157_I))))))
+write(file="S34-Q157_gene_list.txt",unique(gsub("_[0-9]+","",perl=T,c(intersect(names(Q157_S),names(S34_S)),intersect(names(Q157_I),names(S34_I))))))
+commSgene <- unique(gsub("_[0-9]+","",intersect(intersect(names(P95_S),names(S34_S)),names(Q157_S)),perl=T))
+commIgene <- unique(gsub("_[0-9]+","",intersect(intersect(names(P95_I),names(S34_I)),names(Q157_I)),perl=T))
+
+library(VennDiagram)
+venn.diagram(list(P95=P95_S,S34=S34_S,Q157=Q157_S),filename = "Skipping.tiff",
+             col = "transparent",fill = c("cornflowerblue", "green", "yellow"))
+venn.diagram(list(P95=P95_I,S34=S34_I,Q157=Q157_I),filename = "Inclusion.tiff",
+             col = "transparent",fill = c("cornflowerblue", "green", "yellow"))
+
+commS <- rownames(pvalue[which(table(c(P95_S,S34_S,Q157_S))==3),])
+commI <- rownames(pvalue[which(table(c(P95_I,S34_I,Q157_I))==3),])
+write(file="comm_gene_list.txt",gsub("_[0-9]+","",c(commI,commS)))
+
+commPS <- unique(c(rownames(pvalue)[intersect(Q157_S,S34_S)],rownames(pvalue)[intersect(Q157_I,S34_I)]))
+write(gsub("_[0-9]*$","",commPS,perl=T),file="commlist.txt")
+
+# qvalue
+length(which(p.adjust(pvalue[,1],method = "fdr")<0.05))
+length(which(p.adjust(pvalue[,3],method = "fdr")<0.05))
+length(which(p.adjust(pvalue[,5],method = "fdr")<0.05))
+```
+## Fig 3C. Fold changes (FC) of R-loop intensity [Dox(+) / Dox(-)] in HEK293T cells expressing wt or mutant SRSF2(P95H) (top panel), U2AF35(Q157P) (middle panel) and U2AF35(S34F) (bottom panel) presented by Histograms.
+```{r fc of signal - h,fig.width=2.84,fig.height=2.56,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+library(reshape2)
+for (i in c("SRSF2P95H","U2AF35Q157P","U2AF35S34F")){
+  file = paste("Data_Nature/",i,sep="")
+  data <- read.table(file = file)
+  input <- read.table("Data_Nature/input")
+  data = data[,7:14]
+  data = data - input[,7]
+  data[data<0] = 0
+  ratio <- as.data.frame(cbind((data[,3]+data[,4])/(data[,1]+data[,2]),
+                               (data[,7]+data[,8])/(data[,5]+data[,6])))
+  wilcox.test(ratio[is.finite(ratio$V1) & is.finite(ratio$V2),1],
+         ratio[is.finite(ratio$V1) & is.finite(ratio$V2),2],
+         paired = T,alternative = "l")$p.value
+  names(ratio) = c("WT (DOX+/DOX-)","MU (DOX+/DOX-)")
+  ratio <- melt(ratio)
+  names(ratio) <- c("Treatment","Value")
+  p <- ggplot(ratio,aes(x=log2(Value),color=Treatment,fill=Treatment)) + 
+    geom_histogram(position = "identity",bins = 100,aes(y = ..density..),alpha=0.5,size=0.2) +
+    geom_line(stat="density",aes(col=Treatment)) +
+    coord_cartesian(xlim=c(-4,4)) +
+    ylab("Density") +
+    xlab("log2(Fold Change of Rloop Signal)") +
+    theme(panel.grid.major = element_line(colour="NA"),
+          panel.grid.minor = element_line(colour="NA"),
+          panel.background = element_rect(fill="NA"),
+          panel.border = element_rect(colour="black", fill=NA)) +
+    theme(legend.position=c(0,1), legend.justification=c(0,1),
+          legend.background = element_rect(fill="transparent")) +
+    scale_fill_manual(values = c("#ef8a62","#67a9cf")) +
+    scale_color_manual(values = c("#ef8a62","#67a9cf"))
+  print(p)  
+}
+```
+## Fig 3D. Ratio of up- and down-regulated R-loops in promoter versus non-promoter regions in HEK293T cells expressing wt or mutant SRSF2(P95H), U2AF35(Q157P) and U2AF35(S34F).
+```{r Up vs Down,fig.width=2.52,fig.height=2.56,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+mat <- data.frame(matrix(nrow=4,ncol=5))
+mat[,4] <- c("NonTSS","TSS","NonTSS","TSS")
+mat[,5] <- c("WT","WT","MU","MU")
+names(mat) <- c("Down","Up","Ratio","TSS","Gene")
+for (i in c("SRSF2P95H","U2AF35Q157P","U2AF35S34F")){
+  file = paste("Data_Nature/",i,sep="")
+  data <- read.table(file = file)
+  data$WT <- (data[,9]+data[,10])>=(data[,7]+data[,8])
+  data$MU <- (data[,13]+data[,14])>=(data[,11]+data[,12])
+  data$GR <- data$V15=="TSS"
+  
+  mat[1:2,1:2] <- matrix(table(apply(data[,c(18,16)],1,function(x){paste(x,collapse ="-")})),nrow=2,byrow = T)
+  mat[3:4,1:2] <- matrix(table(apply(data[,c(18,17)],1,function(x){paste(x,collapse ="-")})),nrow=2,byrow = T)
+  mat[,3] = log2(mat[,2]/mat[,1])
+  
+  mat$TSS  <- factor(mat$TSS, levels=c("TSS","NonTSS"))
+  mat$Gene <- factor(mat$Gene, levels=c("WT","MU"))
+  
+  p <- ggplot(mat,aes(x=TSS,y=Ratio,fill=Gene)) +
+    geom_bar(stat = "identity",position = position_dodge()) +
+    ylab("Log2(Up/Down)") + xlab("") +
+    coord_cartesian(ylim=c(-0.6,0.8)) +
+    my_clear_theme
+  print(p)
+}
+```
+## Fig S3A. Distribution of R-ChIP signals around transcription start sites on both sense and anti-sense directions.
+```{r tss dis,fig.width=2.94,fig.height=2.83,fig.align = "center",message=F,warning=F}
+data <- read.table("~Jerry/Downloads/profile")
+data$V2 = -data$V2
+names(data) <- c("Plus","Minus")
+data$Pos <- (-200:200)*10
+data <- melt(data,id.vars = c("Pos"))
+ggplot(data,aes(x=Pos,y=value,col=variable)) +
+  geom_line() +
+  geom_hline(yintercept = 0, col="grey") +
+  geom_vline(xintercept = 0, col="grey",lty=2) +
+  my_clear_theme +
+  ylab("R-ChIP signal") + ylim(-0.25,0.4)
+```
+## Fig S3E. Pair-wise comparison of biological replicates for R-ChIP libraries. Pearson correlation coefficient was computed from each comparison to evaluate the reproducibility.
+```{r dup,fig.width=4.86,fig.height=5.70,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+Files     = c("SRSF2P95H","U2AF35Q157P","U2AF35S34F")
+Genes     = c("SRSF2","U2AF35","U2AF35")
+Mutations = c("P95H","Q157P","S34F")
+for (i in 1:3){
+  file = paste("Data_Nature/",Files[i],sep="")
+  data <- read.table(file = file)
+
+  par(mfrow=c(2,2))
+
+  x=paste(Genes[i],"WT Dox(0h) ","Rep1",sep="")
+  y=paste(Genes[i],"WT Dox(0h) ","Rep2",sep="")
+  smoothScatter(data$V7,data$V8,xlim=c(0,5),ylim=c(0,5),xlab=x,ylab=y)
+  text(1.5,4.5,paste("R = ",round(cor(data$V7,data$V8),2),sep=""))
+  x=paste(Genes[i],"WT Dox(5h) ","Rep1",sep="")
+  y=paste(Genes[i],"WT Dox(5h) ","Rep2",sep="")
+  smoothScatter(data$V9,data$V10,xlim=c(0,5),ylim=c(0,5),xlab=x,ylab=y)
+  text(1.5,4.5,paste("R = ",round(cor(data$V9,data$V10),2),sep=""))
+  
+  x=paste(Genes[i],Mutations[i]," Dox(0h) ","Rep1",sep="")
+  y=paste(Genes[i],Mutations[i]," Dox(0h) ","Rep2",sep="")
+  smoothScatter(data$V11,data$V12,xlim=c(0,5),ylim=c(0,5),xlab=x,ylab=y)
+  text(1.5,4.5,paste("R = ",round(cor(data$V11,data$V12),2),sep=""))
+  x=paste(Genes[i],Mutations[i]," Dox(5h) ","Rep1",sep="")
+  y=paste(Genes[i],Mutations[i]," Dox(5h) ","Rep2",sep="")
+  smoothScatter(data$V13,data$V14,xlim=c(0,5),ylim=c(0,5),xlab=x,ylab=y)
+  text(1.5,4.5,paste("R = ",round(cor(data$V13,data$V14),2),sep=""))
+}
+```
+## Fig S3H. Identification of Differentially Regulated R-Loops
+For each R-loop region, if the intensity ratio (5h/0h, or 24h/0h) in mutant is >=1.5 or <=2/3, and significantly higher or lower than that in wild type (5h/0h, or 24h/0h) by t-test, the R-loop was considered significantly up- or down-regulated in mutant.
+```{r Differentially Regulated R-Loops,fig.width=6,fig.height=2,message=F,warning=F}
+library(ggplot2)
+setwd("~/Desktop/R-Loop-MDS/Bin")
+# input: SRSF2P95H, U2AF35Q157P or U2AF35S34F
+data<-read.table("Data/RloopSignal/U2AF35S34F.delta.density",row.names=1)
+data[data<=0] = 0
+ratio <- as.data.frame(cbind(data$V4/data$V2,data$V5/data$V3,
+                             data$V4/data$V3,data$V5/data$V2,
+                             data$V6/data$V2,data$V7/data$V3,
+                             data$V6/data$V3,data$V7/data$V2,
+                             data$V10/data$V8,data$V11/data$V9,
+                             data$V10/data$V9,data$V11/data$V8,
+                             data$V12/data$V8,data$V13/data$V9,
+                             data$V12/data$V9,data$V13/data$V8))
+rownames(ratio) = rownames(data)
+ratio <- ratio[which(rowSums(is.finite(as.matrix(ratio)))==16),]
+pvalue <- matrix(nrow=nrow(ratio),ncol=4)
+rownames(pvalue) = rownames(ratio)
+for(i in 1:nrow(ratio)){
+    pvalue[i,1] = t.test(ratio[i,1:4],ratio[i,9:12])$p.value
+    pvalue[i,2] = mean(as.double(ratio[i,9:12]))
+    pvalue[i,3] = t.test(ratio[i,13:16],ratio[i,5:8])$p.value
+    pvalue[i,4] = mean(as.double(ratio[i,13:16]))
+}
+up5hlist   <-  names(which(pvalue[,1]<0.05 & pvalue[,2]>=1.5))
+down5hlist <-  names(which(pvalue[,1]<0.05 & pvalue[,2]<=2/3))
+up24hlist  <-  names(which(pvalue[,3]<0.05 & pvalue[,4]>=1.5))
+down24hlist <- names(which(pvalue[,3]<0.05 & pvalue[,4]<=2/3))
+
+up5h    <- length(up5hlist)
+down5h  <- length(down5hlist) 
+up24h   <- length(up24hlist)  
+down24h <- length(down24hlist)
+
+# barplot (number of sig rloop)
+d       <- as.data.frame(rbind(up5h,down5h,up24h,down24h))
+names(d)<- "Number"
+d$Class <- c("Up","Down","Up","Down")
+d$Class <- factor(d$Class,levels=c("Up","Down"))
+d$Time  <- c("5h","5h","24h","24h")
+d$Time  <- factor(d$Time,levels = c("5h","24h"))
+
+ggplot(d,aes(x=Time,y=Number,fill=Class)) + 
+  geom_bar(stat = "identity", position=position_dodge(.85),width = 0.8) +
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA)) +
+  ylim(0,800)
+```
+## Fig 4B. Changes in Traveling Ratio (TR) based on metagene analysis of the GRO-seq datasets (gene length > 1,000, n = 19,300) upon induction of wt or mutant splicing factors. 
+```{r Cumulative Frequency (TR),fig.width=3,fig.height=2,message=F,warning=F}
+library("reshape2")
+library("ggplot2")
+setwd("~/Desktop/R-Loop-MDS/Bin")
+data <- read.table("Data/exprTR/active.TR.wtssRloop",sep="\t")
+names(data) <- c("Chr","Start","End","Gene","Length","Strand",
+                 "SRSF2WT_Ctr_Rep1","SRSF2WT_Ctr_Rep2",
+                 "SRSF2WT_5h_Rep1","SRSF2WT_5h_Rep2",
+                 "SRSF2P95H_Ctr_Rep1","SRSF2P95H_Ctr_Rep2",
+                 "SRSF2P95H_5h_Rep1","SRSF2P95H_5h_Rep2",
+                 "U2AF35WT_Ctr_Rep1","U2AF35WT_Ctr_Rep2",
+                 "U2AF35WT_24h_Rep1","U2AF35WT_24h_Rep2",
+                 "U2AF35Q157P_Ctr_Rep1","U2AF35Q157P_Ctr_Rep2",
+                 "U2AF35Q157P_24h_Rep1","U2AF35Q157P_24h_Rep2",
+                 "U2AF35S34F_Ctr_Rep1","U2AF35S34F_Ctr_Rep2",
+                 "U2AF35S34F_24h_Rep1","U2AF35S34F_24h_Rep2")
+# for(i in c(7,11)){
+for(i in c(11,19,23)){
+  d <- data[rowSums(is.na(data[,i:(i+3)]))==0,i:(i+3)]
+  d <- data.frame(d[,1]+d[,2],d[,3]+d[,4])
+  names(d) = c("DOX(-)","DOX(+)")
+  r <- melt(d)
+  
+  p <- ggplot(r,aes(x=value,col=variable)) +
+    stat_ecdf() +
+    scale_x_log10(breaks=c(0.12,1,4,16,64,256)) + 
+    coord_cartesian(xlim=c(2,128)) +
+    ylab("Fraction of Genes") +
+    xlab("") + labs(col="") +
+    theme(panel.grid.major = element_line(colour="NA"),
+          panel.grid.minor = element_line(colour="NA"),
+          panel.background = element_rect(fill="NA"),
+          panel.border = element_rect(colour="black", fill=NA)) +
+    theme(legend.position=c(0,1), legend.justification=c(0,1),
+          legend.background = element_rect(fill="transparent"))
+  print(p)
+}
+```
+## Fig 4C. Heatmaps of changes in TSS-associated R-loops (y-axis) and TR (x-axis) for individual genes in HEK293T cells expressing wt or mutant SRSF2(P95H). The numbers in the upper right quarter of each graph indicate the percentages of positively correlated events.
+```{r}
+library(MASS)
+library(fields)
+# SRSF2 5h U2AF35 24h
+# mean or each dup
+wt <- read.table("Data_Nature/U2AF35Q157P.TRvsRLoop",sep="\t")
+wt[wt<0] = 0
+wt <- data.frame(log2((wt[,3])/(wt[,1])),
+                 log2((wt[,7])/(wt[,6])))
+wt <- subset(wt,is.finite(wt[,2]))
+
+mu <- read.table("Data_Nature/U2AF35S34F.TRvsRLoop",sep="\t")
+mu[mu<0] = 0
+mu <- data.frame(log2(mu[,3]/mu[,1]),
+                 log2(mu[,7]/mu[,5]))
+mu <- subset(mu,is.finite(mu[,1]))
+mu <- subset(mu,is.finite(mu[,2]))
+
+# plot 1: heatmap (no background correction)
+kde2dwt <- kde2d(wt[,1],wt[,2],n=200)
+kde2dmu <- kde2d(mu[,1],mu[,2],n=200)
+col = colorRampPalette(c("darkblue","blue","cyan","yellow","red","darkred"))(400)
+if(max(kde2dwt$z) > max(kde2dmu$z)){
+  colmu = col[1:round(max(kde2dmu$z)/max(kde2dwt$z)*length(col),0)]
+  colwt = col
+}else{
+  colmu = col
+  colwt = col[1:round(max(kde2dwt$z)/max(kde2dmu$z)*length(col),0)]
+}
+
+image.plot(kde2dmu,xlim=c(-1.5,1.5),ylim=c(-1.5,1.5),col=colmu)
+image.plot(kde2dwt,xlim=c(-1.5,1.5),ylim=c(-1.5,1.5),col=colwt)
+
+nrow(subset(wt,(wt[,1]<0 & wt[,2]>=0)))
+nrow(subset(wt,(wt[,1]>=0 & wt[,2]>=0)))
+nrow(subset(wt,(wt[,1]<0 & wt[,2]<0)))
+nrow(subset(wt,(wt[,1]>=0 & wt[,2]<0)))
+
+nrow(subset(mu,(mu[,1]<0 & mu[,2]>=0)))
+nrow(subset(mu,(mu[,1]>=0 & mu[,2]>=0)))
+nrow(subset(mu,(mu[,1]<0 & mu[,2]<0)))
+nrow(subset(mu,(mu[,1]>=0 & mu[,2]<0)))
+```
+## Fig S4C. Composite R-loop profiles around genic regions corresponding to 5’ and 3’ splice sites, where RNA splicing was altered based on RASL-seq data from HEK293T cells expressing mutant SRSF2 or U2AF35. Shaded areas represent variations under each treatment condition.
+```{r splice R-loop,fig.width=3.02,fig.height=1.33,fig.align = "center",message=F,warning=F}
+# input files: P95S, P95I, Q157S, Q157I, S34S, S34I
+library(ggplot2)
+s5ctr <- read.table("Data_Nature/RASL/P95S.splice5.ctr")
+s5dox <- read.table("Data_Nature/RASL/P95S.splice5.5h")
+s5in  <- read.table("Data_Nature/RASL/P95S.splice5.in")
+s3ctr <- read.table("Data_Nature/RASL/P95S.splice3.ctr")
+s3dox <- read.table("Data_Nature/RASL/P95S.splice3.5h")
+s3in  <- read.table("Data_Nature/RASL/P95S.splice3.in")
+
+s5    <- data.frame(c(apply(s5ctr,2,mean),apply(s5dox,2,mean),apply(s5in,2,mean)),
+                    c(apply(s5ctr,2,sd),apply(s5dox,2,sd),apply(s5in,2,sd)),
+                    c(rep("ctr",ncol(s5ctr)),rep("dox",ncol(s5dox)),rep("in",ncol(s5in))),
+                    seq(-400,400))
+s3    <- data.frame(c(apply(s3ctr,2,mean),apply(s3dox,2,mean),apply(s3in,2,mean)),
+                    c(apply(s3ctr,2,sd),apply(s3dox,2,sd),apply(s3in,2,sd)),
+                    c(rep("ctr",ncol(s3ctr)),rep("dox",ncol(s3dox)),rep("in",ncol(s3in))),
+                    seq(-400,400))
+
+names(s5) = c("mean","sd","class","pos")
+names(s3) = c("mean","sd","class","pos")
+
+ggplot(s5,aes(x=pos,y=mean,col=class)) +
+  geom_errorbar(aes(ymin=mean-sd,ymax=mean+sd),alpha=0.05) +
+  geom_line() +
+  my_clear_theme + coord_cartesian(ylim=c(-0.2,0.4))
+ggplot(s3,aes(x=pos,y=mean,col=class)) +
+  geom_errorbar(aes(ymin=mean-sd,ymax=mean+sd),alpha=0.05) +
+  geom_line() +
+  my_clear_theme + coord_cartesian(ylim=c(-0.2,0.4))
+```
+## Fig S4D. Fold change (FC) distribution of R-ChIP mapped R-loop signals [Dox(+) / Dox(-)] in HEK293T cells expressing wt or mutant SRSF2(P95H). R-loop regions were divided into four groups according to the percentage of SRSF2 binding motifs CCNG (top panel) or GGNG (bottom panel) within individual R-loop regions.
+```{r ccng vs ggng}
+library(ggplot2)
+library(reshape2)
+data <- read.table("Data_Nature/SRSF2.ccngggng")
+ccng <- quantile(data$V16,probs = seq(0,1,0.25))
+ggng <- quantile(data$V17,probs = seq(0,1,0.25))
+ratio <- as.data.frame(cbind(log2((data[,9]+data[,10])/(data[,7]+data[,8])),
+                             log2((data[,13]+data[,14])/(data[,11]+data[,12])),
+                             .bincode(data$V16,breaks = ccng,include.lowest = T),
+                             .bincode(data$V17,breaks = ggng,include.lowest = T)))
+names(ratio) = c("WT","P95H","CCNG","GGNG")
+data <- melt(ratio,id.vars = c("CCNG","GGNG"))
+ggplot(data,aes(x=variable,y=value,col=as.factor(CCNG))) +
+  geom_boxplot(outlier.size = .5,notch = T) +
+  coord_cartesian(ylim=c(-2,2)) +
+  my_clear_theme +
+  labs(col="CCNG% Group") + xlab("") +
+  ylab("log2 R-loop [Dox(+)/Dox(-)]")
+
+wilcox.test(data[data$CCNG==1 & data$variable=="WT","value"],
+            data[data$CCNG==2 & data$variable=="WT","value"])
+wilcox.test(data[data$CCNG==2 & data$variable=="WT","value"],
+            data[data$CCNG==3 & data$variable=="WT","value"])
+wilcox.test(data[data$CCNG==3 & data$variable=="WT","value"],
+            data[data$CCNG==4 & data$variable=="WT","value"])
+wilcox.test(data[data$CCNG==1 & data$variable=="P95H","value"],
+            data[data$CCNG==2 & data$variable=="P95H","value"])
+wilcox.test(data[data$CCNG==2 & data$variable=="P95H","value"],
+            data[data$CCNG==3 & data$variable=="P95H","value"])
+wilcox.test(data[data$CCNG==3 & data$variable=="P95H","value"],
+            data[data$CCNG==4 & data$variable=="P95H","value"])
+
+ggplot(data,aes(x=variable,y=value,col=as.factor(GGNG))) +
+  geom_boxplot(outlier.size = .5) +
+#  coord_cartesian(ylim=c(-3,3)) +
+  my_clear_theme +
+  labs(col="GGNG% Group") + xlab("") +
+  ylab("log2 R-loop [Dox(+)/Dox(-)]")
+
+wilcox.test(data[data$GGNG==1 & data$variable=="WT","value"],
+            data[data$GGNG==2 & data$variable=="WT","value"])
+wilcox.test(data[data$GGNG==2 & data$variable=="WT","value"],
+            data[data$GGNG==3 & data$variable=="WT","value"])
+wilcox.test(data[data$GGNG==3 & data$variable=="WT","value"],
+            data[data$GGNG==4 & data$variable=="WT","value"])
+wilcox.test(data[data$GGNG==1 & data$variable=="P95H","value"],
+            data[data$GGNG==2 & data$variable=="P95H","value"])
+wilcox.test(data[data$GGNG==2 & data$variable=="P95H","value"],
+            data[data$GGNG==3 & data$variable=="P95H","value"])
+wilcox.test(data[data$GGNG==3 & data$variable=="P95H","value"],
+            data[data$GGNG==4 & data$variable=="P95H","value"])
+```
+## Fig S5A. Reproducibility of GRO-Seq data
+Pearson's correlation coefficients of gene expression between replicates were calculated to assess the reproducibility of GRO-Seq data.
+```{r GRO-Seq Reproducibility}
+par(mfrow=c(2,4))
+setwd("~/Desktop/R-Loop-MDS/Bin")
+data <- read.table("Data/exprTR/all.expr",sep="\t")
+names(data) <- c("Chr","Start","End","Gene","Length","Strand",
+                 "SRSF2WT_Ctr_Rep1","SRSF2WT_Ctr_Rep2",
+                 "SRSF2WT_5h_Rep1","SRSF2WT_5h_Rep2",
+                 "SRSF2P95H_Ctr_Rep1","SRSF2P95H_Ctr_Rep2",
+                 "SRSF2P95H_5h_Rep1","SRSF2P95H_5h_Rep2",
+                 "U2AF35WT_Ctr_Rep1","U2AF35WT_Ctr_Rep2",
+                 "U2AF35WT_24h_Rep1","U2AF35WT_24h_Rep2",
+                 "U2AF35Q157P_Ctr_Rep1","U2AF35Q157P_Ctr_Rep2",
+                 "U2AF35Q157P_24h_Rep1","U2AF35Q157P_24h_Rep2",
+                 "U2AF35S34F_Ctr_Rep1","U2AF35S34F_Ctr_Rep2",
+                 "U2AF35S34F_24h_Rep1","U2AF35S34F_24h_Rep2")
+for(i in seq(7,25,by=2)){
+  r <- round(cor(data[,i],data[,i+1]),3)
+  smoothScatter(data[,i],data[,i+1],ylim=c(0,15),xlim=c(0,15),
+                xlab=paste(names(data)[i]," (RPKM)",sep=""),
+                ylab=paste(names(data)[i+1]," (RPKM)",sep=""))
+  text(3,13,paste("R=",r,sep=""))
+}
+```
+
+##########################################################################################
+##########################################################################################
+## *** Others
+## Genomic districution
+```{r Genomic Dis,fig.width=4.10,fig.height=2.60,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+df <- data.frame(group = c("Promoter", "Terminal", "Gene body","Intergenic"),
+                 value = c(10436, 255, 1368, 2248))
+df$group = factor(df$group,levels=c("Intergenic", "Terminal","Gene body","Promoter"))
+ggplot(df, aes(x="", y=value/sum(df$value), fill=group))+
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y", start=0) +
+  xlab("") + ylab("") + labs(fill="")
+```
+## Sequence feature
+```{r Sequence,fig.width=2.80,fig.height=2.51,fig.align = "center",message=F,warning=F}
+library(reshape2)
+library(ggplot2)
+allseq <- read.table("Data_Nature/MDS.all.nucleotides",sep="\t",header = T)
+allseq <- melt(allseq,id.vars = "Pos")
+ggplot(data = allseq,aes(x=Pos-400,y=value,col=variable)) + 
+  geom_line() +
+  theme(panel.grid.major = element_line(colour="NA"),
+        panel.grid.minor = element_line(colour="NA"),
+        panel.background = element_rect(fill="NA"),
+        panel.border = element_rect(colour="black", fill=NA)) +
+  labs(col="") + ylim(-0.05,0.7) + xlab("Distance to R-loop summit (nt)")
+```
+```{r Rloop Sig,fig.width=2.52,fig.height=3.67,fig.align = "center",message=F,warning=F}
+signal <- read.table("Data_Nature/signal.801")
+input  <- read.table("Data_Nature/input.801")
+plot(seq(-400,400,by=1),apply(signal,2,mean) - apply(input,2,mean),type='l',
+     xlab="Distance to R-loop summit",ylab="RPM")
+rm(signal,input)
+```
+## Strand specificity - Rloop
+```{r,Strand Rloop,fig.width=2.46,fig.height=2.49,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+library(reshape2)
+sense <- read.table("Data_Nature/profile.sense")
+antisense <- read.table("Data_Nature/profile.antisense")
+data  <- data.frame(apply(sense,2,mean),apply(antisense,2,mean))
+names(data) = c("Sense","Antisense")
+data$Position = 1:500
+data <- melt(data,id.vars = "Position")
+ggplot(data,aes(x=Position,y=value,col=variable)) + 
+  geom_line(size=1) +
+  xlab("Genomic Region (5'-3')") + ylab("RPM") +
+  my_clear_theme +
+  scale_x_continuous(breaks=seq(0,500,by=100),
+                     labels=c("-2K", "", "5'", "3'","","2K")) +
+  theme(legend.position=c(.8,.8)) +
+  labs(col="")
+rm(sense,antisense)
+```
+## Strand specificity - GRO-seq
+```{r,Strand Rloop,fig.width=2.46,fig.height=2.49,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+data <- read.table("Data_Nature/RPKM.data.frame",sep="\t")
+data$V2 = factor(data$V2,levels=c("same","oppo"))
+ggplot(data,aes(x=V2,y=V1,col=V2)) + 
+  geom_boxplot(notch = T, outlier.size = 0.5) +
+  coord_cartesian(ylim=c(0,50)) +
+  my_clear_theme +
+  xlab("") + ylab("GRO-seq (RPKM)") + guides(col=F) +
+  scale_x_discrete(labels=c("same" = "Sense", "oppo" = "Antisense"))
+```
+
+## FC of R-loop Signal
+```{r fc of signal - c,fig.width=2.84,fig.height=2.56,fig.align = "center",message=F,warning=F}
+library(ggplot2)
+library(reshape2)
+for (i in c("SRSF2P95H","U2AF35Q157P","U2AF35S34F")){
+  file = paste("Data_Nature/",i,sep="")
+  data <- read.table(file = file)
+  input <- read.table("Data_Nature/input")
+  data = data[,7:14]
+  data = data - input[,7]
+  data[data<0] = 0
+  ratio <- as.data.frame(cbind((data[,3]+data[,4])/(data[,1]+data[,2]),
+                               (data[,7]+data[,8])/(data[,5]+data[,6])))
+  names(ratio) = c("WT (DOX+/DOX-)","MU (DOX+/DOX-)")
+  ratio <- melt(ratio)
+  names(ratio) <- c("Treatment","Value")
+  p <- ggplot(ratio,aes(x=log2(Value),col=Treatment)) + 
+    stat_ecdf() + 
+    coord_cartesian(xlim=c(-2,2)) +
+    ylab("Cumulative Frequency") +
+    xlab("log2(Fold Change of Rloop Signal)") +
+    theme(panel.grid.major = element_line(colour="NA"),
+          panel.grid.minor = element_line(colour="NA"),
+          panel.background = element_rect(fill="NA"),
+          panel.border = element_rect(colour="black", fill=NA)) +
+    theme(legend.position=c(0,1), legend.justification=c(0,1),
+          legend.background = element_rect(fill="transparent")) +
+    geom_vline(xintercept = 0,lty=2) + geom_hline(yintercept = 0.5, lty=2)
+  print(p)  
+}
+```
